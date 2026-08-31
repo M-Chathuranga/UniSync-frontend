@@ -33,8 +33,16 @@ export default function LoginScreen() {
       className="bg-indigo-100" 
       bounces={false}
     >
+
+      {/* App Title */}
+            <View className="flex-row items-center px-5 pt-12 pb-2">
+              <Text className="flex-1 text-center text-xl font-bold text-indigo-900 pr-7">
+                Smart Finance
+              </Text>
+            </View>
+
       {/* 1. Header Banner Image */}
-      <View className="h-80 justify-center items-center px-4 pt-4 pb-2">
+      <View className="h-60 justify-center items-center px-4 pt-4 pb-2">
         <Image
           source={{ uri: 'https://img.freepik.com/free-vector/sign-concept-illustration_114360-125.jpg' }}
           className="w-full h-full rounded-3xl"
@@ -42,7 +50,7 @@ export default function LoginScreen() {
         />
       </View>
 
-      {/* 2. Login Card Sheet */}
+      {/* Login Card Sheet */}
       <View className="flex-1 bg-white rounded-t-[32px] px-6 pt-10 pb-8 justify-between">
         <View>
           
