@@ -1,110 +1,112 @@
-import React, { useState } from 'react';
-import { StyleSheet, ScrollView, SafeAreaView, View, Text, Switch, StatusBar } from 'react-native';
+import React from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
+import { useRouter } from 'expo-router';
 
-import AlertBanner from '../components/AlertBanner.jsx';
-import SafeToSpendCard from '../components/SafeToSpendCard.jsx';
-import AnalyticsChart from '../components/AnalyticsChart.jsx';
-import ExpenseInput from '../components/ExpenseInput.jsx';
-import RecentExpenses from '../components/RecentExpenses.jsx';
-
-export default function Index() {
-  const [monthlyBudget, setMonthlyBudget] = useState('0');
-  const [expenseInput, setExpenseInput] = useState('');
-  const [expenses, setExpenses] = useState([]);
-  const [isAlertEnabled, setIsAlertEnabled] = useState(true);
-
-  const budgetNum = parseFloat(monthlyBudget) || 0;
-  const safeDailyLimit = budgetNum > 0 ? Math.round(budgetNum / 30) : 0;
-  const totalSpentToday = expenses.reduce((sum, item) => sum + item.amount, 0);
-  const overSpent = totalSpentToday - safeDailyLimit;
-
-  const handleAddExpense = () => {
-    const val = parseFloat(expenseInput);
-    if (!isNaN(val) && val > 0) {
-      const newEntry = {
-        id: Date.now(),
-        title: 'Expense Added',
-        amount: val,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setExpenses([newEntry, ...expenses]);
-      setExpenseInput('');
-    }
-  };
+export default function Home() {
+  const router = useRouter();
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8f9fe" />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.content}>
         
-        <AlertBanner overSpent={overSpent} isEnabled={isAlertEnabled} />
-        
-        <SafeToSpendCard 
-          monthlyBudget={monthlyBudget} 
-          setMonthlyBudget={setMonthlyBudget} 
-          safeDailyLimit={safeDailyLimit} 
-          totalSpentToday={totalSpentToday} 
-        />
-        
-        <AnalyticsChart safeDailyLimit={safeDailyLimit} totalSpentToday={totalSpentToday} />
-        
-        <ExpenseInput 
-          expenseInput={expenseInput} 
-          setExpenseInput={setExpenseInput} 
-          onAddExpense={handleAddExpense} 
-        />
-        
-        <RecentExpenses expenses={expenses} />
+        {/* App Title */}
+        <Text style={styles.title}>Smart Finance</Text>
 
-        <Text style={styles.sectionHeader}>Preferences</Text>
-        <View style={styles.prefCard}>
-          <Text style={styles.prefText}>Daily Limit Alerts</Text>
-          <Switch 
-            value={isAlertEnabled} 
-            onValueChange={setIsAlertEnabled}
-            trackColor={{ false: '#dcdfe6', true: '#5b67f5' }}
-            thumbColor={'#ffffff'}
-          />
+        {/* User Card */}
+        <View style={styles.userCard}>
+          <Text style={{ fontSize: 30 }}>👤</Text>
+          <View style={{ marginLeft: 10 }}>
+            <Text style={styles.name}>Alex Chen</Text>
+            <Text style={styles.subText}>University Student</Text>
+            <Text style={styles.tag}>Premium Account</Text>
+          </View>
         </View>
 
-      </ScrollView>
+        {/* Menu Buttons */}
+        <TouchableOpacity style={styles.button}>
+          <Text style={styles.btnText}>🎛️ Dashboard</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.button}>
+          <Text style={styles.btnText}>📊 Analytics</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.button}>
+          <Text style={styles.btnText}>📑 Transactions</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.button}>
+          <Text style={styles.btnText}>⚙️ Settings</Text>
+        </TouchableOpacity>
+
+        {/* Notifications Button */}
+        <TouchableOpacity 
+          style={styles.activeButton}
+          onPress={() => router.push('/notifications')}
+        >
+          <Text style={styles.activeBtnText}>🔔 Notifications</Text>
+        </TouchableOpacity>
+
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f8f9fe' 
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fe',
   },
-  scrollContent: { 
-    padding: 16, 
-    paddingTop: 40,
-    paddingBottom: 40 
+  content: {
+    padding: 20,
   },
-  sectionHeader: {
-    fontSize: 18,
+  title: {
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#1e293b',
-    marginTop: 10,
-    marginBottom: 10,
+    color: '#4f46e5',
+    marginBottom: 20,
   },
-  prefCard: { 
-    backgroundColor: 'white', 
-    padding: 16, 
-    borderRadius: 14, 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
+  userCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 5,
-    elevation: 2,
+    backgroundColor: '#ffffff',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 20,
   },
-  prefText: { 
-    color: '#1e293b', 
-    fontSize: 16, 
-    fontWeight: 'bold' 
-  }
+  name: {
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  subText: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+  tag: {
+    fontSize: 11,
+    color: '#4f46e5',
+    fontWeight: 'bold',
+  },
+  button: {
+    backgroundColor: '#ffffff',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  btnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  activeButton: {
+    backgroundColor: '#6366f1',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  activeBtnText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
 });
