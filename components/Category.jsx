@@ -6,7 +6,7 @@ const categories = [
   { id: '2', name: 'Transport', type: 'Expense' },
   { id: '3', name: 'Shopping', type: 'Expense' },
   { id: '4', name: 'Bills & Utilities', type: 'Expense' },
-  
+  { id: '5', name: 'Salary', type: 'Income' },
 ];
 
 export default function CategoryManagement() {
