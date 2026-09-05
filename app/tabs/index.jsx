@@ -1,10 +1,6 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import CategoryManagement from './categories';
 
-export default function TabIndex() {
-  return (
-    <View className="flex-1 p-4 bg-white justify-center items-center">
-      <Text className="text-xl font-bold">Tab Home Screen</Text>
-    </View>
-  );
+export default function page () {
+    return <CategoryManagement />;
 }
