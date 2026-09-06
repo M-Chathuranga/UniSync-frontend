@@ -11,12 +11,11 @@ export default function EmptyState() {
       <Text style={styles.title}>No Notifications</Text>
       <Text style={styles.sub}>You're all caught up!</Text>
 
-      {/* Dashboard එකට යන Button එක */}
       <TouchableOpacity 
         style={styles.button}
         onPress={() => router.push('/')}
       >
-        <Text style={styles.buttonText}>Go to Dashboard</Text>
+        <Text style={styles.btnText}>Go to Dashboard</Text>
       </TouchableOpacity>
     </View>
   );
@@ -40,11 +39,11 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: '#4f46e5',
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
   },
-  buttonText: {
+  btnText: {
     color: '#ffffff',
     fontWeight: 'bold',
     fontSize: 12,

@@ -22,7 +22,7 @@ export default function NotificationsScreen() {
         ) : (
           <View>
             <Text style={styles.sectionTitle}>TODAY</Text>
-            
+
             <NotificationCard
               title="Daily limit exceeded"
               time="10:42 AM"
