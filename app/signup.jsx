@@ -14,24 +14,16 @@ import { Ionicons } from '@expo/vector-icons';
 export default function SignUpScreen() {
   const router = useRouter();
 
-  const [fullName, setFullName] = useState('');
+
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [agreeTerms, setAgreeTerms] = useState(false);
 
   const handleSignUp = () => {
-    if (!fullName || !email || !password || !confirmPassword) {
+    if (!firstName || !lastName || !email || !password) {
       Alert.alert('Error', 'Please fill in all fields.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match.');
-      return;
-    }
-    if (!agreeTerms) {
-      Alert.alert('Error', 'Please agree to the Terms & Privacy Policy.');
       return;
     }
     router.replace('/tabs');
@@ -56,7 +48,7 @@ export default function SignUpScreen() {
       {/* Top Banner Image */}
       <View className="h-60 justify-center items-center px-4 pt-2 pb-2">
         <Image
-          source={{ uri: 'https://img.freepik.com/free-vector/financial-growth-concept-illustration_114360-7853.jpg' }}
+          source={{ uri: 'https://img.freepik.com/free-vector/sign-concept-illustration_114360-125.jpg' }}
           className="w-full h-full rounded-3xl"
           resizeMode="cover"
         />
@@ -65,21 +57,33 @@ export default function SignUpScreen() {
       {/* Sign Up Card Sheet */}
       <View className="flex-1 bg-white rounded-t-[32px] px-6 pt-8 pb-8 justify-between">
         <View>
-          {/* Headings (Login Font Sizes) */}
-          <Text className="text-4xl font-bold text-gray-900">Create Account</Text>
-          <Text className="text-sm text-gray-500 mt-1.5 mb-6">
+          {/* Headings */}
+          <Text className="text-3xl font-bold text-gray-900 ">Create Account</Text>
+          <Text className="text-sm text-gray-500 mt-1.5 mb-3">
             Start tracking your student budget today.
           </Text>
 
-          {/* Full Name Input */}
+          {/* First Name Input */}
           <View className="mb-4">
-            <Text className="text-lg font-semibold text-gray-700 mb-2">Full Name</Text>
+            <Text className="text-lg font-semibold text-gray-700 mb-2">First Name</Text>
             <TextInput
               className="bg-white border border-gray-200 rounded-2xl px-4 py-3.5 text-base text-gray-900"
-              placeholder="Alex Morgan"
+              placeholder="Alex"
               placeholderTextColor="#9ca3af"
-              value={fullName}
-              onChangeText={setFullName}
+              value={firstName}
+              onChangeText={setFirstName}
+            />
+          </View>
+
+          {/* Last Name Input */}
+          <View className="mb-4">
+            <Text className="text-lg font-semibold text-gray-700 mb-2">Last Name</Text>
+            <TextInput
+              className="bg-white border border-gray-200 rounded-2xl px-4 py-3.5 text-base text-gray-900"
+              placeholder="Morgan"
+              placeholderTextColor="#9ca3af"
+              value={lastName}
+              onChangeText={setLastName}
             />
           </View>
 
