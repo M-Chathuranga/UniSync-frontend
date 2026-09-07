@@ -1,6 +1,10 @@
 import React from 'react';
-import CategoryManagement from './categories';
+import { View, Text } from 'react-native';
 
-export default function page () {
-    return <CategoryManagement />;
+export default function HomeScreen() {
+  return (
+    <View className="flex-1 items-center justify-center bg-white">
+      <Text className="text-xl font-bold">Home</Text>
+    </View>
+  );
 }
