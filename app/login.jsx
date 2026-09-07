@@ -44,7 +44,7 @@ export default function LoginScreen() {
       {/* 1. Header Banner Image */}
       <View className="h-60 justify-center items-center px-4 pt-4 pb-2">
         <Image
-          source={{ uri: 'https://img.freepik.com/free-vector/sign-concept-illustration_114360-125.jpg' }}
+          source={{ uri: 'https://img.freepik.com/free-vector/financial-growth-concept-illustration_114360-7853.jpg' }}
           className="w-full h-full rounded-3xl"
           resizeMode="cover"
         />
