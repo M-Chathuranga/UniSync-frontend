@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,6 +58,11 @@ export default function DashboardScreen() {
     await Voice.stop();
     setIsListening(false);
   };
+=======
+
+import React from 'react';
+import { View, Text } from 'react-native';
+>>>>>>> 9e0e87e (Fix tabs layout and organize directorystructure)
 
   return (
     <SafeAreaView className="flex-1 bg-[#f7f9fb]">
