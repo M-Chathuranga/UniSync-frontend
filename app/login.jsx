@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -19,12 +20,58 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  const handleLogin = () => {
+  // Loading state to control UI spinner during network requests
+  const [loading, setLoading] = useState(false);
+
+  // Backend API URL - Replace with your PC's local IPv4 address
+  const API_URL = process.env.EXPO_PUBLIC_API_URL + '/users/login';
+
+
+  const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
-    router.replace('/tabs');
+    // Start UI spinner
+    setLoading(true);
+
+    try {
+      // 2. Send POST request to the Express backend API
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: password,
+        }),
+      });
+
+      // Parse JSON payload response from server
+      const data = await response.json();
+
+      // 3. Handle backend HTTP response status
+      if (response.status === 200) {
+        // HTTP 200 OK: Save JWT token securely on the device
+        await SecureStore.setItemAsync('userToken', data.token);
+
+        Alert.alert('Success', 'Logged in successfully!', [
+          { text: 'OK', onPress: () => router.replace('/tabs') }
+        ]);
+      } else {
+        // HTTP 401 / 404 Error responses from server
+        Alert.alert('Login Failed', data.message || 'Invalid credentials');
+      }
+
+    } catch (error) {
+      // Catch network failure or IP connectivity errors
+      console.error('Network Error:', error);
+      Alert.alert('Network Error', 'Unable to connect to the backend server. Check Wi-Fi & IP address.');
+    } finally {
+      // Stop UI spinner
+      setLoading(false);
+    }
   };
 
   return (
@@ -143,3 +190,4 @@ export default function LoginScreen() {
     </ScrollView>
   );
 }
+

@@ -8,6 +8,7 @@ import {
   ScrollView, 
   Alert 
 } from 'react-native';
+
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -21,12 +22,57 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSignUp = () => {
+  // Loading state to control UI button spinner during API call
+  const [loading, setLoading] = useState(false);
+
+  // Backend API URL - Replace '192.168.8.100' with your PC's local IPv4 address
+  const API_URL = process.env.EXPO_PUBLIC_API_URL + '/users';
+
+  const handleSignUp = async() => {
     if (!firstName || !lastName || !email || !password) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
-    router.replace('/tabs');
+    // Start loading indicator
+    setLoading(true);
+
+    try {
+      // 2. Send POST request to backend Express API
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim().toLowerCase(),
+          password: password,
+        }),
+      });
+
+      // Parse JSON response payload from server
+      const data = await response.json();
+
+      // 3. Handle backend HTTP response status
+      if (response.status === 201) {
+        // HTTP 201 Created: Success
+        Alert.alert('Success', 'Account created successfully!', [
+          { text: 'Log In Now', onPress: () => router.replace('/login') }
+        ]);
+      } else {
+        // HTTP 400/500 Error response from backend
+        Alert.alert('Registration Failed', data.message || 'Something went wrong');
+      }
+
+    } catch (error) {
+      // Catch network or connection errors
+      console.error('Connection Error:', error);
+      Alert.alert('Network Error', 'Unable to connect to the backend server. Check Wi-Fi & IP address.');
+    } finally {
+      // Stop loading indicator
+      setLoading(false);
+    }
   };
 
   return (
@@ -145,3 +191,4 @@ export default function SignUpScreen() {
     </ScrollView>
   );
 }
+

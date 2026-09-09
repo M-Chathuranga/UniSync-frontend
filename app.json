@@ -20,7 +20,7 @@
     },
     "plugins": [
       "expo-router",
-      "@react-native-voice/voice"
+      "expo-secure-store"
     ]
   }
 }
