@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { router } from 'expo-router';
 
 const filters = ['All', 'Food', 'Transport', 'Fixed'];
 
@@ -35,7 +36,9 @@ export default function HistoryScreen() {
           paddingBottom: 16,
         }}
       >
-        <Text style={{ fontSize: 22 }}>←</Text>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={{ fontSize: 22, color: '#4F46E5' }}>←</Text>
+        </TouchableOpacity>
         <Text style={{ fontSize: 18, fontWeight: '700', color: '#4F46E5' }}>History</Text>
         <Text style={{ fontSize: 20 }}>⚙️</Text>
       </View>
@@ -126,7 +129,6 @@ export default function HistoryScreen() {
                       {item.name}
                     </Text>
                     <Text style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>
-                      
                       {item.category} · {item.time}
                     </Text>
                   </View>

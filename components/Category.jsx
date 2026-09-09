@@ -12,7 +12,7 @@ const initialCustomCategories = [
   { id: 'c1', name: 'Gaming', emoji: '🎮', bgColor: '#F3F4F6' },
 ];
 
-export default function CategoryManagement() {
+export default function CategoryManagement({ onBack }) {
   const [customCategories, setCustomCategories] = useState(initialCustomCategories);
 
   const handleDelete = (id) => {
@@ -85,7 +85,9 @@ export default function CategoryManagement() {
           paddingBottom: 16,
         }}
       >
-        <Text style={{ fontSize: 22 }}>←</Text>
+        <TouchableOpacity onPress={onBack}>
+          <Text style={{ fontSize: 22, color: '#4F46E5' }}>←</Text>
+        </TouchableOpacity>
         <Text style={{ fontSize: 18, fontWeight: '700', color: '#4F46E5' }}>Categories</Text>
         <Text style={{ fontSize: 22 }}>👤</Text>
       </View>
