@@ -1,25 +1,79 @@
-import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
-import { router } from 'expo-router';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 
-export default function HomeScreen() {
+export default function CombinedScreen() {
+  // උදාහරණ දත්ත (Categories සහ History සඳහා)
+  const categories = ['Technology', 'Education', 'Business', 'Science'];
+  const historyItems = ['Scanned QR - 10:00 AM', 'Viewed Item - Yesterday', 'Logged In - 2 days ago'];
+
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F9FAFB', gap: 16 }}>
-      <Text style={{ fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 20 }}>Home</Text>
+    <ScrollView style={styles.container}>
+      <Text style={styles.mainTitle}>UniSync Dashboard</Text>
 
-      <TouchableOpacity
-        onPress={() => router.push('/categories')}
-        style={{ backgroundColor: '#4F46E5', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 12 }}
-      >
-        <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 16 }}>Go to Categories</Text>
-      </TouchableOpacity>
+      {/* Category කොටස */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Categories</Text>
+        {categories.map((cat, index) => (
+          <View key={index} style={styles.card}>
+            <Text style={styles.cardText}>{cat}</Text>
+          </View>
+        ))}
+      </View>
 
-      <TouchableOpacity
-        onPress={() => router.push('/history')}
-        style={{ backgroundColor: '#4F46E5', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 12 }}
-      >
-        <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 16 }}>Go to History</Text>
-      </TouchableOpacity>
-    </View>
+      {/* History කොටස */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>History</Text>
+        {historyItems.map((hist, index) => (
+          <View key={index} style={styles.cardHistory}>
+            <Text style={styles.historyText}>{hist}</Text>
+          </View>
+        ))}
+      </View>
+    </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    paddingTop: 50,
+    paddingHorizontal: 20,
+  },
+  mainTitle: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#1e293b',
+  },
+  section: {
+    marginBottom: 25,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#475569',
+  },
+  card: {
+    backgroundColor: '#6366f1',
+    padding: 14,
+    borderRadius: 8,
+    marginVertical: 5,
+  },
+  cardText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  cardHistory: {
+    backgroundColor: '#e2e8f0',
+    padding: 14,
+    borderRadius: 8,
+    marginVertical: 5,
+  },
+  historyText: {
+    color: '#334155',
+    fontSize: 14,
+  },
+});
