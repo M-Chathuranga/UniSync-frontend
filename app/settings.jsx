@@ -21,8 +21,8 @@ export default function SettingsScreen() {
           <Ionicons name="person" size={32} color="#475569" />
         </View>
         <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>Alex Chen</Text>
-          <Text style={styles.profileEmail}>alex.chen@university.edu</Text>
+          <Text style={styles.profileName}>New User</Text>
+          <Text style={styles.profileEmail}>Complete your profile</Text>
         </View>
       </View>
 
@@ -101,10 +101,6 @@ export default function SettingsScreen() {
         <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.logoutButton}>
-        <Text style={styles.logoutText}>Log Out</Text>
-      </TouchableOpacity>
-
       <View style={{ height: 60 }} />
     </ScrollView>
   );
@@ -125,6 +121,4 @@ const styles = StyleSheet.create({
   cardText: { fontSize: 16, fontWeight: '600', color: '#1e293b', flex: 1 },
   rightRow: { flexDirection: 'row', alignItems: 'center' },
   subValueText: { fontSize: 15, color: '#64748b', marginRight: 6 },
-  logoutButton: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#f1f5f9', padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 25, shadowColor: '#000', shadowOpacity: 0.02, elevation: 1 },
-  logoutText: { color: '#dc2626', fontSize: 16, fontWeight: 'bold' },
 });
