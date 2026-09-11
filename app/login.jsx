@@ -10,6 +10,20 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+export const AUTH_USER_KEY = '@smart_finance_auth_user';
+
+export const extractNameFromEmail = (email) => {
+  if (!email || !email.includes('@')) return 'User';
+  const rawUsername = email.split('@')[0];
+  const cleaned = rawUsername.replace(/[._\-0-9]/g, ' ').trim();
+  if (!cleaned) return rawUsername.charAt(0).toUpperCase() + rawUsername.slice(1);
+  return cleaned
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -19,12 +33,34 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
-    router.replace('/tabs');
+
+    if (!email.includes('@')) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const displayName = extractNameFromEmail(cleanEmail);
+
+    const userSession = {
+      email: cleanEmail,
+      name: displayName,
+      role: 'Student Account',
+      loggedInAt: new Date().toISOString(),
+      rememberMe: rememberMe,
+    };
+
+    try {
+      await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(userSession));
+      router.replace('/tabs');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save login session.');
+    }
   };
 
   return (
@@ -33,15 +69,12 @@ export default function LoginScreen() {
       className="bg-indigo-100" 
       bounces={false}
     >
+      <View className="flex-row items-center px-5 pt-12 pb-2">
+        <Text className="flex-1 text-center text-xl font-bold text-indigo-900 pr-7">
+          Smart Finance
+        </Text>
+      </View>
 
-      {/* App Title */}
-            <View className="flex-row items-center px-5 pt-12 pb-2">
-              <Text className="flex-1 text-center text-xl font-bold text-indigo-900 pr-7">
-                Smart Finance
-              </Text>
-            </View>
-
-      {/* 1. Header Banner Image */}
       <View className="h-60 justify-center items-center px-4 pt-4 pb-2">
         <Image
           source={{ uri: 'https://img.freepik.com/free-vector/financial-growth-concept-illustration_114360-7853.jpg' }}
@@ -50,22 +83,17 @@ export default function LoginScreen() {
         />
       </View>
 
-      {/* Login Card Sheet */}
       <View className="flex-1 bg-white rounded-t-[32px] px-6 pt-10 pb-8 justify-between">
         <View>
-          
-          {/* Shield Icon Badge */}
           <View className="w-12 h-12 rounded-2xl bg-indigo-50 justify-center items-center mb-5">
             <Ionicons name="shield-checkmark" size={26} color="#4f46e5" />
           </View>
 
-          {/* Title and Subtitle */}
-          <Text className="text-4xl font-bold text-gray-900 ">Login</Text>
+          <Text className="text-4xl font-bold text-gray-900">Login</Text>
           <Text className="text-sm text-gray-500 mt-1.5 mb-7">
             Enter your email and password to log in
           </Text>
 
-          {/* Email Field */}
           <View className="mb-5">
             <Text className="text-lg font-semibold text-gray-700 mb-2">Email</Text>
             <TextInput
@@ -76,10 +104,13 @@ export default function LoginScreen() {
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              importantForAutofill="yes"
             />
           </View>
 
-          {/* Password Field */}
           <View className="mb-5">
             <Text className="text-lg font-semibold text-gray-700 mb-2">Password</Text>
             <View className="flex-row items-center border border-gray-200 rounded-2xl px-4 bg-white">
@@ -101,7 +132,6 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          {/* Remember Me & Forgot Password */}
           <View className="flex-row justify-between items-center my-3">
             <TouchableOpacity 
               className="flex-row items-center" 
@@ -120,7 +150,6 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Log In Button */}
           <TouchableOpacity 
             className="bg-indigo-600 py-4 rounded-2xl items-center mt-6 shadow-md shadow-indigo-300" 
             onPress={handleLogin}
@@ -129,16 +158,14 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Sign Up Link */}
         <TouchableOpacity 
           className="items-center pt-8 pb-8"
-          onPress={() => router.push('/signup')}
+          onPress={() => Alert.alert('Info', 'Registration flow is managed by your university portal.')}
         >
           <Text className="text-sm text-gray-500">
             Don't have an account? <Text className="text-indigo-600 font-bold">Sign Up</Text>
           </Text>
         </TouchableOpacity>
-
       </View>
     </ScrollView>
   );

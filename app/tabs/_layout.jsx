@@ -1,3 +1,5 @@
+import React from 'react';
+import { View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -7,6 +9,7 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: '#4143d5',
         tabBarInactiveTintColor: '#767586',
         tabBarStyle: {
@@ -25,6 +28,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
+          title: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name={focused ? 'home' : 'home-outline'} color={color} focused={focused} />
           ),
@@ -33,6 +37,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="categories"
         options={{
+          title: 'Categories',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name={focused ? 'pie-chart' : 'pie-chart-outline'} color={color} focused={focused} />
           ),
@@ -41,6 +46,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="history"
         options={{
+          title: 'History',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name={focused ? 'receipt' : 'receipt-outline'} color={color} focused={focused} />
           ),
@@ -49,6 +55,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="notifications"
         options={{
+          title: 'Notifications',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name={focused ? 'notifications' : 'notifications-outline'} color={color} focused={focused} />
           ),
@@ -57,6 +64,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="settings"
         options={{
+          title: 'Settings',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name={focused ? 'settings' : 'settings-outline'} color={color} focused={focused} />
           ),
@@ -67,17 +75,11 @@ export default function TabsLayout() {
 }
 
 function TabIcon({ name, color, focused }) {
-  const { View } = require('react-native');
   return (
     <View
-      style={{
-        width: 40,
-        height: 32,
-        borderRadius: 16,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: focused ? '#e1e0ff' : 'transparent',
-      }}
+      className={`w-10 h-8 rounded-2xl items-center justify-center ${
+        focused ? 'bg-[#e1e0ff]' : 'bg-transparent'
+      }`}
     >
       <Ionicons name={name} size={22} color={color} />
     </View>

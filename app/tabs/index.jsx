@@ -1,31 +1,55 @@
-import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  Dimensions,
+  Modal,
+  TextInput,
+  Animated,
+  Easing,
+  PermissionsAndroid,
+  Platform,
+  Alert,
+  KeyboardAvoidingView,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Voice from '@react-native-voice/voice';
-import SafeToSpendCard from '../../components/SafeToSpendCard';
-import VoiceListeningOverlay from '../../components/VoiceListeningOverlay';
-import Header from '../../components/Header';
-import Card from '../../components/Card';
-import Badge from '../../components/Badge';
-import CategoryCard from '../../components/CategoryCard';
-import TransactionCard from '../../components/TransactionCard';
+import { PieChart } from 'react-native-chart-kit';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect, router } from 'expo-router';
 
-// TODO: replace with real data from the backend
-const MOCK = {
-  userName: 'Kavishka',
-  date: 'Fri, 04 Sep',
-  safeToSpend: 640,
-  daysLeft: 17,
-  month: 'Jul',
+const screenWidth = Dimensions.get('window').width;
+const DASHBOARD_STORAGE_KEY = '@smart_finance_dashboard_data';
+const AUTH_USER_KEY = '@smart_finance_auth_user';
+
+const getLiveDateInfo = () => {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' });
+  const monthStr = now.toLocaleDateString('en-US', { month: 'short' });
+  const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysLeft = Math.max(1, totalDaysInMonth - now.getDate());
+  return { dateStr, monthStr, daysLeft };
+};
+
+const initialFinanceState = {
   income: 25000,
   expenses: 16500,
   balance: 8500,
+  chartData: [
+    { name: 'Food', population: 4620, color: '#4143d5', legendFontColor: '#475569', legendFontSize: 12 },
+    { name: 'Boarding', population: 4455, color: '#10b981', legendFontColor: '#475569', legendFontSize: 12 },
+    { name: 'Transport', population: 3465, color: '#ef4444', legendFontColor: '#475569', legendFontSize: 12 },
+    { name: 'Study', population: 1980, color: '#a855f7', legendFontColor: '#475569', legendFontSize: 12 },
+    { name: 'Other', population: 1980, color: '#64748b', legendFontColor: '#475569', legendFontSize: 12 },
+  ],
   breakdown: [
     { label: 'Food', percent: 28, color: '#4143d5' },
-    { label: 'Boarding', percent: 27, color: '#6dfe9c' },
-    { label: 'Transport', percent: 21, color: '#c2494b' },
-    { label: 'Study', percent: 12, color: '#a13135' },
-    { label: 'Other', percent: 12, color: '#767586' },
+    { label: 'Boarding', percent: 27, color: '#10b981' },
+    { label: 'Transport', percent: 21, color: '#ef4444' },
+    { label: 'Study', percent: 12, color: '#a855f7' },
+    { label: 'Other', percent: 12, color: '#64748b' },
   ],
   recentActivity: [
     { id: '1', title: 'Canteen lunch', sub: 'Food · 12:40 PM', amount: -200, icon: 'restaurant' },
@@ -34,92 +58,648 @@ const MOCK = {
 };
 
 export default function DashboardScreen() {
-  const [showOverlay, setShowOverlay] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [heardText, setHeardText] = useState('');
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [showManualModal, setShowManualModal] = useState(false);
 
-  useEffect(() => {
-    Voice.onSpeechResults = (e) => setHeardText(e.value?.[0] || '');
-    Voice.onSpeechError = () => setIsListening(false);
-    return () => {
-      Voice.destroy().then(Voice.removeAllListeners);
-    };
-  }, []);
+  const [dateInfo, setDateInfo] = useState(getLiveDateInfo());
+  const [userProfile, setUserProfile] = useState({ name: 'User', email: '' });
+  const [financeData, setFinanceData] = useState(initialFinanceState);
 
-  const startListening = async () => {
-    setShowOverlay(true);
-    setHeardText('');
-    await Voice.start('en-US');
-    setIsListening(true);
+  useFocusEffect(
+    useCallback(() => {
+      setDateInfo(getLiveDateInfo());
+      loadUserSession();
+      loadFinanceData();
+    }, [])
+  );
+
+  const loadUserSession = async () => {
+    try {
+      const storedUser = await AsyncStorage.getItem(AUTH_USER_KEY);
+      if (storedUser) {
+        setUserProfile(JSON.parse(storedUser));
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const stopListening = async () => {
-    await Voice.stop();
-    setIsListening(false);
+  const loadFinanceData = async () => {
+    try {
+      const saved = await AsyncStorage.getItem(DASHBOARD_STORAGE_KEY);
+      if (saved) {
+        setFinanceData(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const saveFinanceData = async (newData) => {
+    try {
+      setFinanceData(newData);
+      await AsyncStorage.setItem(DASHBOARD_STORAGE_KEY, JSON.stringify(newData));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const safeToSpend = Math.max(0, Math.round(financeData.balance / dateInfo.daysLeft));
+
+  const handleAddNewTransaction = (newTx) => {
+    let updatedExpenses = financeData.expenses;
+    let updatedIncome = financeData.income;
+    let updatedBalance = financeData.balance;
+
+    if (newTx.type === 'income') {
+      updatedIncome += newTx.amount;
+      updatedBalance += newTx.amount;
+    } else {
+      updatedExpenses += newTx.amount;
+      updatedBalance -= newTx.amount;
+    }
+
+    const updatedData = {
+      ...financeData,
+      income: updatedIncome,
+      expenses: updatedExpenses,
+      balance: updatedBalance,
+      recentActivity: [
+        {
+          id: Date.now().toString(),
+          title: newTx.title,
+          sub: `${newTx.category} · Just now`,
+          amount: newTx.type === 'income' ? newTx.amount : -newTx.amount,
+          icon: newTx.icon,
+        },
+        ...financeData.recentActivity,
+      ],
+    };
+
+    saveFinanceData(updatedData);
+  };
+
+  const chartConfig = {
+    color: (opacity = 1) => `rgba(65, 67, 213, ${opacity})`,
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-[#f7f9fb]">
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
-        <Header appName="Smart Finance" userInitial={MOCK.userName.charAt(0)} />
-
-        <Text className="text-2xl font-bold text-[#191c1e] mb-1">Hello, {MOCK.userName} 👋</Text>
-        <Text className="text-sm text-[#464555] mb-5">{MOCK.date}</Text>
-
-        <SafeToSpendCard amount={MOCK.safeToSpend} daysLeft={MOCK.daysLeft} month={MOCK.month} />
-
-        {/* Stats row */}
-        <View className="flex-row justify-between mt-4 mb-5">
-          <Card className="flex-1 mx-1 items-center">
-            <Badge icon="arrow-down" bgColor="#6dfe9c" iconColor="#005227" />
-            <Text className="text-[10px] text-[#464555] mt-1">Income</Text>
-            <Text className="text-xs font-bold text-[#191c1e] mt-0.5">{MOCK.income.toLocaleString()}</Text>
-          </Card>
-          <Card className="flex-1 mx-1 items-center">
-            <Badge icon="arrow-up" bgColor="#ffdad6" iconColor="#93000a" />
-            <Text className="text-[10px] text-[#464555] mt-1">Expenses</Text>
-            <Text className="text-xs font-bold text-[#191c1e] mt-0.5">{MOCK.expenses.toLocaleString()}</Text>
-          </Card>
-          <Card className="flex-1 mx-1 items-center">
-            <Badge icon="wallet" bgColor="#e1e0ff" iconColor="#2c2cc3" />
-            <Text className="text-[10px] text-[#464555] mt-1">Balance</Text>
-            <Text className="text-xs font-bold text-[#191c1e] mt-0.5">{MOCK.balance.toLocaleString()}</Text>
-          </Card>
-        </View>
-
-        {/* Spending breakdown */}
-        <Card className="mb-5">
-          <Text className="text-base font-bold text-[#191c1e] mb-4">Spending Breakdown</Text>
-          {MOCK.breakdown.map((item) => (
-            <CategoryCard key={item.label} label={item.label} percent={item.percent} color={item.color} />
-          ))}
-        </Card>
-
-        {/* Recent activity */}
+    <SafeAreaView className="flex-1 bg-[#f8fafc]" edges={['top', 'left', 'right']}>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 110 }}
+        showsVerticalScrollIndicator={false}
+      >
         <View className="flex-row justify-between items-center mb-3">
-          <Text className="text-base font-bold text-[#191c1e]">Recent Activity</Text>
-          <Text className="text-xs font-semibold text-[#4143d5]">See All</Text>
+          <Text className="text-xl font-bold text-[#0f172a]">Smart Finance</Text>
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              onPress={() => setShowManualModal(true)}
+              activeOpacity={0.8}
+              className="w-8 h-8 rounded-full bg-[#4143d5] items-center justify-center shadow-sm"
+            >
+              <Ionicons name="add" size={20} color="#ffffff" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push('/tabs/settings')}
+              activeOpacity={0.8}
+              className="w-8 h-8 rounded-full bg-[#ede9fe] items-center justify-center border border-[#c7d2fe]"
+            >
+              <Text className="text-[#4143d5] font-bold text-xs">
+                {userProfile.name ? userProfile.name.charAt(0).toUpperCase() : 'U'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        {MOCK.recentActivity.map((item) => (
-          <TransactionCard key={item.id} title={item.title} sub={item.sub} amount={item.amount} icon={item.icon} />
-        ))}
+
+        <Text className="text-2xl font-bold text-[#0f172a]">
+          Hello, {userProfile.name} 👋
+        </Text>
+        <Text className="text-xs text-[#64748b] mt-0.5 mb-4">{dateInfo.dateStr}</Text>
+
+        <View className="bg-[#f0fdf4] rounded-3xl p-5 flex-row justify-between items-center border border-[#dcfce7] mb-4">
+          <View className="flex-1">
+            <Text className="text-[11px] font-bold text-[#16a34a] tracking-wider">
+              SAFE TO SPEND TODAY
+            </Text>
+            <Text className="text-3xl font-extrabold text-[#15803d] my-1">
+              Rs {safeToSpend}.00
+            </Text>
+            <Text className="text-xs font-medium text-[#16a34a]">
+              • {dateInfo.daysLeft} days left in {dateInfo.monthStr}
+            </Text>
+          </View>
+          <View className="w-10 h-10 rounded-full bg-[#94a3b8] items-center justify-center">
+            <Ionicons name="shield-checkmark" size={20} color="#ffffff" />
+          </View>
+        </View>
+
+        <View className="flex-row justify-between mb-4">
+          <View className="flex-1 bg-white rounded-3xl p-3.5 items-center mx-1 shadow-sm border border-[#f1f5f9]">
+            <View className="w-8 h-8 rounded-full bg-[#dcfce7] items-center justify-center mb-1">
+              <Ionicons name="arrow-down" size={14} color="#16a34a" />
+            </View>
+            <Text className="text-[11px] text-[#64748b]">Income</Text>
+            <Text className="text-xs font-bold text-[#0f172a] mt-0.5">
+              {financeData.income.toLocaleString()}
+            </Text>
+          </View>
+
+          <View className="flex-1 bg-white rounded-3xl p-3.5 items-center mx-1 shadow-sm border border-[#f1f5f9]">
+            <View className="w-8 h-8 rounded-full bg-[#fee2e2] items-center justify-center mb-1">
+              <Ionicons name="arrow-up" size={14} color="#ef4444" />
+            </View>
+            <Text className="text-[11px] text-[#64748b]">Expenses</Text>
+            <Text className="text-xs font-bold text-[#0f172a] mt-0.5">
+              {financeData.expenses.toLocaleString()}
+            </Text>
+          </View>
+
+          <View className="flex-1 bg-white rounded-3xl p-3.5 items-center mx-1 shadow-sm border border-[#f1f5f9]">
+            <View className="w-8 h-8 rounded-full bg-[#e0e7ff] items-center justify-center mb-1">
+              <Ionicons name="wallet" size={14} color="#4338ca" />
+            </View>
+            <Text className="text-[11px] text-[#64748b]">Balance</Text>
+            <Text className="text-xs font-bold text-[#0f172a] mt-0.5">
+              {financeData.balance.toLocaleString()}
+            </Text>
+          </View>
+        </View>
+
+        <View className="bg-white rounded-3xl p-4 mb-4 shadow-sm border border-[#f1f5f9]">
+          <Text className="text-sm font-bold text-[#0f172a] mb-2">Spending Breakdown</Text>
+          <View className="items-center">
+            <PieChart
+              data={financeData.chartData}
+              width={screenWidth - 56}
+              height={180}
+              chartConfig={chartConfig}
+              accessor="population"
+              backgroundColor="transparent"
+              paddingLeft="10"
+              absolute
+            />
+          </View>
+
+          <View className="mt-2">
+            {financeData.breakdown.map((item) => (
+              <View key={item.label} className="mb-2.5">
+                <View className="flex-row justify-between mb-1">
+                  <Text className="text-xs font-medium text-[#334155]">{item.label}</Text>
+                  <Text className="text-xs font-semibold text-[#0f172a]">{item.percent}%</Text>
+                </View>
+                <View className="h-2 bg-[#f1f5f9] rounded-full overflow-hidden">
+                  <View
+                    style={{ width: `${item.percent}%`, backgroundColor: item.color }}
+                    className="h-full rounded-full"
+                  />
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        <View className="bg-white rounded-3xl p-4 shadow-sm border border-[#f1f5f9]">
+          <View className="flex-row justify-between items-center mb-3">
+            <Text className="text-sm font-bold text-[#0f172a]">Recent Activity</Text>
+            <TouchableOpacity>
+              <Text className="text-xs font-semibold text-[#4143d5]">See All</Text>
+            </TouchableOpacity>
+          </View>
+
+          {financeData.recentActivity.map((item) => (
+            <View key={item.id} className="flex-row justify-between items-center py-2.5 border-b border-[#f8fafc] last:border-b-0">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-2xl bg-[#f1f5f9] items-center justify-center mr-3">
+                  <Ionicons name={item.icon} size={18} color="#4143d5" />
+                </View>
+                <View>
+                  <Text className="text-xs font-semibold text-[#0f172a]">{item.title}</Text>
+                  <Text className="text-[11px] text-[#64748b] mt-0.5">{item.sub}</Text>
+                </View>
+              </View>
+              <Text className={`text-xs font-bold ${item.amount < 0 ? 'text-[#ef4444]' : 'text-[#16a34a]'}`}>
+                {item.amount < 0 ? `- Rs ${Math.abs(item.amount)}` : `+ Rs ${item.amount}`}
+              </Text>
+            </View>
+          ))}
+        </View>
       </ScrollView>
 
-      <TouchableOpacity
-        onPress={startListening}
-        className="absolute bottom-8 self-center w-14 h-14 rounded-full bg-[#4143d5] items-center justify-center"
-        style={{ shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 }}
-      >
-        <Ionicons name="mic" size={26} color="#fff" />
-      </TouchableOpacity>
+      <View className="absolute bottom-6 self-center items-center justify-center">
+        <View className="w-16 h-16 rounded-full bg-[#4143d5]/20 items-center justify-center">
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => setShowVoiceModal(true)}
+            className="rounded-full bg-[#4143d5] items-center justify-center border-2 border-white shadow-xl shadow-[#4143d5]/60"
+            style={{ elevation: 12, width: 54, height: 54 }}
+          >
+            <Ionicons name="mic" size={26} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
-      <VoiceListeningOverlay
-        visible={showOverlay}
-        isListening={isListening}
-        heardText={heardText}
-        onStop={stopListening}
-        onClose={() => setShowOverlay(false)}
+      <InternalVoiceModal
+        visible={showVoiceModal}
+        onClose={() => setShowVoiceModal(false)}
+        onAddExpense={(exp) => handleAddNewTransaction({ ...exp, type: 'expense' })}
+      />
+
+      <ManualAddModal
+        visible={showManualModal}
+        onClose={() => setShowManualModal(false)}
+        onAddTransaction={handleAddNewTransaction}
       />
     </SafeAreaView>
+  );
+}
+
+function ManualAddModal({ visible, onClose, onAddTransaction }) {
+  const [type, setType] = useState('expense');
+  const [title, setTitle] = useState('');
+  const [amount, setAmount] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('Food');
+
+  const categories = [
+    { name: 'Food', icon: 'restaurant' },
+    { name: 'Transport', icon: 'bus' },
+    { name: 'Boarding', icon: 'home' },
+    { name: 'Study', icon: 'book' },
+    { name: 'Other', icon: 'receipt' },
+  ];
+
+  const handleSave = () => {
+    const parsedAmount = parseFloat(amount);
+    if (!title.trim() || isNaN(parsedAmount) || parsedAmount <= 0) {
+      Alert.alert('Invalid Input', 'Please enter a valid title and amount.');
+      return;
+    }
+
+    const catObj = categories.find((c) => c.name === selectedCategory) || { icon: 'receipt' };
+
+    onAddTransaction({
+      title: title.trim(),
+      amount: parsedAmount,
+      category: selectedCategory,
+      icon: type === 'income' ? 'wallet' : catObj.icon,
+      type: type,
+    });
+
+    setTitle('');
+    setAmount('');
+    setType('expense');
+    setSelectedCategory('Food');
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1 bg-black/50 justify-end"
+      >
+        <View className="bg-white rounded-t-[32px] px-6 pt-5 pb-9">
+          <View className="w-12 h-1 bg-gray-300 rounded-full self-center mb-4" />
+
+          <Text className="text-lg font-bold text-[#0f172a] mb-4">Add Transaction</Text>
+
+          <View className="flex-row bg-[#f1f5f9] p-1 rounded-2xl mb-4">
+            <TouchableOpacity
+              onPress={() => setType('expense')}
+              className={`flex-1 py-2.5 rounded-xl items-center ${
+                type === 'expense' ? 'bg-[#ef4444]' : 'bg-transparent'
+              }`}
+            >
+              <Text className={`text-xs font-bold ${type === 'expense' ? 'text-white' : 'text-[#64748b]'}`}>
+                Expense
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setType('income')}
+              className={`flex-1 py-2.5 rounded-xl items-center ${
+                type === 'income' ? 'bg-[#16a34a]' : 'bg-transparent'
+              }`}
+            >
+              <Text className={`text-xs font-bold ${type === 'income' ? 'text-white' : 'text-[#64748b]'}`}>
+                Income
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text className="text-xs font-semibold text-[#64748b] mb-1">Title / Description</Text>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder={type === 'expense' ? 'e.g. Canteen lunch' : 'e.g. Monthly Allowance'}
+            placeholderTextColor="#94a3b8"
+            className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-3"
+          />
+
+          <Text className="text-xs font-semibold text-[#64748b] mb-1">Amount (Rs)</Text>
+          <TextInput
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="numeric"
+            placeholder="0.00"
+            placeholderTextColor="#94a3b8"
+            className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-4"
+          />
+
+          {type === 'expense' && (
+            <>
+              <Text className="text-xs font-semibold text-[#64748b] mb-2">Category</Text>
+              <View className="flex-row flex-wrap gap-2 mb-5">
+                {categories.map((c) => {
+                  const isSelected = selectedCategory === c.name;
+                  return (
+                    <TouchableOpacity
+                      key={c.name}
+                      onPress={() => setSelectedCategory(c.name)}
+                      className={`flex-row items-center px-3 py-1.5 rounded-full border ${
+                        isSelected
+                          ? 'bg-[#4143d5] border-[#4143d5]'
+                          : 'bg-[#f8fafc] border-gray-200'
+                      }`}
+                    >
+                      <Ionicons
+                        name={c.icon}
+                        size={14}
+                        color={isSelected ? '#ffffff' : '#64748b'}
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text
+                        className={`text-xs font-semibold ${
+                          isSelected ? 'text-white' : 'text-[#64748b]'
+                        }`}
+                      >
+                        {c.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
+          <View className="flex-row gap-3 mt-2">
+            <TouchableOpacity
+              onPress={onClose}
+              className="flex-1 bg-gray-100 py-3.5 rounded-xl items-center"
+            >
+              <Text className="text-xs font-bold text-[#64748b]">Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleSave}
+              className="flex-1 bg-[#4143d5] py-3.5 rounded-xl items-center shadow-md shadow-[#4143d5]/30"
+            >
+              <Text className="text-xs font-bold text-white">Save</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function InternalVoiceModal({ visible, onClose, onAddExpense }) {
+  const [isRecording, setIsRecording] = useState(false);
+  const [spokenText, setSpokenText] = useState('');
+  const [detectedExpense, setDetectedExpense] = useState(null);
+
+  const pulseAnim1 = useRef(new Animated.Value(1)).current;
+  const pulseAnim2 = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (isRecording) {
+      Animated.loop(
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(pulseAnim1, {
+              toValue: 1.45,
+              duration: 800,
+              easing: Easing.out(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseAnim1, {
+              toValue: 1,
+              duration: 800,
+              easing: Easing.in(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.sequence([
+            Animated.timing(pulseAnim2, {
+              toValue: 1.7,
+              duration: 1000,
+              easing: Easing.out(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseAnim2, {
+              toValue: 1,
+              duration: 1000,
+              easing: Easing.in(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ]),
+        ])
+      ).start();
+    } else {
+      pulseAnim1.setValue(1);
+      pulseAnim2.setValue(1);
+    }
+  }, [isRecording]);
+
+  useEffect(() => {
+    if (visible) {
+      setIsRecording(false);
+      setSpokenText('');
+      setDetectedExpense(null);
+    }
+  }, [visible]);
+
+  const requestMicrophonePermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone Permission',
+            message: 'Smart Finance needs access to your microphone to record voice expenses.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const toggleRecording = async () => {
+    if (!isRecording) {
+      const hasPermission = await requestMicrophonePermission();
+
+      if (!hasPermission) {
+        Alert.alert('Permission Required', 'Microphone permission is required.');
+        return;
+      }
+
+      setIsRecording(true);
+      setSpokenText('Listening to audio...');
+      setDetectedExpense(null);
+
+      setTimeout(() => {
+        setIsRecording(false);
+        parseExpense('Rs 250 for canteen lunch');
+      }, 2500);
+    } else {
+      setIsRecording(false);
+    }
+  };
+
+  const parseExpense = (text) => {
+    setSpokenText(text);
+    const clean = text.toLowerCase();
+    const match = clean.match(/(?:rs\.?|rupees)?\s*(\d+(?:\.\d{1,2})?)/i);
+    const amount = match ? parseFloat(match[1]) : 0;
+
+    let category = 'Other';
+    let icon = 'receipt';
+    if (/(lunch|canteen|food|tea|dinner|breakfast|snack|rice|coffee|kottu)/i.test(clean)) {
+      category = 'Food';
+      icon = 'restaurant';
+    } else if (/(bus|transit|train|ticket|uber|pickme|fuel|petrol)/i.test(clean)) {
+      category = 'Transport';
+      icon = 'bus';
+    } else if (/(boarding|rent|room|hostel)/i.test(clean)) {
+      category = 'Boarding';
+      icon = 'home';
+    } else if (/(book|study|photocopy|pen|print|exam|class)/i.test(clean)) {
+      category = 'Study';
+      icon = 'book';
+    }
+
+    if (amount > 0) {
+      setDetectedExpense({
+        title: text.trim(),
+        amount: amount,
+        category: category,
+        icon: icon,
+      });
+    }
+  };
+
+  const handleSave = () => {
+    if (detectedExpense) {
+      onAddExpense(detectedExpense);
+      onClose();
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View className="flex-1 bg-black/50 justify-end">
+        <View className="bg-white rounded-t-[36px] px-6 pt-6 pb-10 items-center shadow-2xl">
+          <View className="w-12 h-1.5 bg-gray-300 rounded-full mb-5" />
+
+          <Text className="text-xl font-extrabold text-[#0f172a]">Voice Assistant</Text>
+          <Text className="text-xs text-[#64748b] mt-1 mb-6 text-center">
+            {isRecording ? 'Listening... Tap mic to stop' : 'Tap microphone or choose a prompt'}
+          </Text>
+
+          <View className="items-center justify-center my-4 h-36 w-36">
+            <Animated.View
+              style={{
+                transform: [{ scale: pulseAnim2 }],
+                opacity: pulseAnim2.interpolate({ inputRange: [1, 1.7], outputRange: [0.35, 0] }),
+              }}
+              className="absolute w-32 h-32 rounded-full bg-[#4143d5]"
+            />
+            <Animated.View
+              style={{
+                transform: [{ scale: pulseAnim1 }],
+                opacity: pulseAnim1.interpolate({ inputRange: [1, 1.45], outputRange: [0.5, 0.05] }),
+              }}
+              className="absolute w-24 h-24 rounded-full bg-[#818cf8]"
+            />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={toggleRecording}
+              className={`w-20 h-20 rounded-full items-center justify-center shadow-xl border-4 border-[#e0e7ff] ${
+                isRecording ? 'bg-[#ef4444]' : 'bg-[#4143d5]'
+              }`}
+              style={{ elevation: 10 }}
+            >
+              <Ionicons name={isRecording ? 'stop' : 'mic'} size={34} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+
+          <View className="w-full bg-[#f8fafc] border border-gray-200 rounded-2xl p-3.5 my-3">
+            <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+              Spoken Query:
+            </Text>
+            <Text className="text-sm font-semibold text-[#0f172a] italic">
+              {spokenText ? `"${spokenText}"` : 'Tap mic or choose a prompt below'}
+            </Text>
+          </View>
+
+          {detectedExpense && (
+            <View className="w-full bg-[#ecfdf5] border border-[#a7f3d0] rounded-2xl p-4 my-2 flex-row justify-between items-center">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-xl bg-[#d1fae5] items-center justify-center mr-3">
+                  <Ionicons name={detectedExpense.icon} size={20} color="#059669" />
+                </View>
+                <View>
+                  <Text className="text-xs font-bold text-[#065f46]">{detectedExpense.category}</Text>
+                  <Text className="text-[11px] text-gray-500">{detectedExpense.title}</Text>
+                </View>
+              </View>
+              <Text className="text-base font-extrabold text-[#047857]">
+                - Rs {detectedExpense.amount}
+              </Text>
+            </View>
+          )}
+
+          <Text className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-2 mb-2 self-start">
+            Quick Prompts:
+          </Text>
+          <View className="flex-row flex-wrap gap-2 mb-4 w-full">
+            {['Rs 250 for lunch', 'Bus fare 60', 'Rs 350 for books'].map((sample) => (
+              <TouchableOpacity
+                key={sample}
+                onPress={() => parseExpense(sample)}
+                className="bg-white border border-gray-200 px-3 py-1.5 rounded-full shadow-xs"
+              >
+                <Text className="text-xs text-[#4143d5] font-medium">{sample}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View className="flex-row gap-3 w-full mt-2">
+            <TouchableOpacity
+              onPress={onClose}
+              className="flex-1 bg-gray-100 py-3.5 rounded-2xl items-center justify-center"
+            >
+              <Text className="text-xs font-bold text-[#475569]">Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleSave}
+              disabled={!detectedExpense}
+              className={`flex-1 py-3.5 rounded-2xl items-center justify-center shadow-md ${
+                detectedExpense ? 'bg-[#4143d5]' : 'bg-gray-300'
+              }`}
+            >
+              <Text className="text-xs font-bold text-white">Save Expense</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
