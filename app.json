@@ -4,16 +4,27 @@
     "slug": "UniSync-frontend",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.kavishka.smartfinance",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro"
@@ -21,6 +32,12 @@
     "plugins": [
       "expo-router",
       "@react-native-voice/voice"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "711a5972-c7b8-4c13-b314-94b99d81d5c1"
+      }
+    }
   }
 }

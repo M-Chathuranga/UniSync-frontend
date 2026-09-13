@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,10 +18,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PieChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect, router } from 'expo-router';
+import { useRouter } from 'expo-router';
 
 const screenWidth = Dimensions.get('window').width;
-const DASHBOARD_STORAGE_KEY = '@smart_finance_dashboard_data';
+const DASHBOARD_STORAGE_KEY = '@smart_finance_dashboard_data_v3';
 const AUTH_USER_KEY = '@smart_finance_auth_user';
 
 const getLiveDateInfo = () => {
@@ -34,30 +34,31 @@ const getLiveDateInfo = () => {
 };
 
 const initialFinanceState = {
-  income: 25000,
-  expenses: 16500,
-  balance: 8500,
-  chartData: [
-    { name: 'Food', population: 4620, color: '#4143d5', legendFontColor: '#475569', legendFontSize: 12 },
-    { name: 'Boarding', population: 4455, color: '#10b981', legendFontColor: '#475569', legendFontSize: 12 },
-    { name: 'Transport', population: 3465, color: '#ef4444', legendFontColor: '#475569', legendFontSize: 12 },
-    { name: 'Study', population: 1980, color: '#a855f7', legendFontColor: '#475569', legendFontSize: 12 },
-    { name: 'Other', population: 1980, color: '#64748b', legendFontColor: '#475569', legendFontSize: 12 },
-  ],
+  income: 0,
+  expenses: 0,
+  balance: 0,
+  chartData: [],
   breakdown: [
-    { label: 'Food', percent: 28, color: '#4143d5' },
-    { label: 'Boarding', percent: 27, color: '#10b981' },
-    { label: 'Transport', percent: 21, color: '#ef4444' },
-    { label: 'Study', percent: 12, color: '#a855f7' },
-    { label: 'Other', percent: 12, color: '#64748b' },
+    { label: 'Food', percent: 0, color: '#4143d5' },
+    { label: 'Boarding', percent: 0, color: '#10b981' },
+    { label: 'Transport', percent: 0, color: '#ef4444' },
+    { label: 'Study', percent: 0, color: '#a855f7' },
+    { label: 'Other', percent: 0, color: '#64748b' },
   ],
-  recentActivity: [
-    { id: '1', title: 'Canteen lunch', sub: 'Food · 12:40 PM', amount: -200, icon: 'restaurant' },
-    { id: '2', title: 'Bus fare', sub: 'Transport · 8:10 PM', amount: -60, icon: 'bus' },
-  ],
+  recentActivity: [],
+};
+
+const CATEGORY_COLORS = {
+  Food: '#4143d5',
+  Boarding: '#10b981',
+  Transport: '#ef4444',
+  Study: '#a855f7',
+  Other: '#64748b',
 };
 
 export default function DashboardScreen() {
+  const router = useRouter();
+
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
 
@@ -65,13 +66,11 @@ export default function DashboardScreen() {
   const [userProfile, setUserProfile] = useState({ name: 'User', email: '' });
   const [financeData, setFinanceData] = useState(initialFinanceState);
 
-  useFocusEffect(
-    useCallback(() => {
-      setDateInfo(getLiveDateInfo());
-      loadUserSession();
-      loadFinanceData();
-    }, [])
-  );
+  useEffect(() => {
+    setDateInfo(getLiveDateInfo());
+    loadUserSession();
+    loadFinanceData();
+  }, []);
 
   const loadUserSession = async () => {
     try {
@@ -89,6 +88,8 @@ export default function DashboardScreen() {
       const saved = await AsyncStorage.getItem(DASHBOARD_STORAGE_KEY);
       if (saved) {
         setFinanceData(JSON.parse(saved));
+      } else {
+        setFinanceData(initialFinanceState);
       }
     } catch (e) {
       console.error(e);
@@ -102,6 +103,23 @@ export default function DashboardScreen() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleResetAllData = () => {
+    Alert.alert(
+      'Reset All Data',
+      'Are you sure you want to clear all transactions, expenses, and the Pie Chart to Rs 0?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset to Rs 0',
+          style: 'destructive',
+          onPress: async () => {
+            await saveFinanceData(initialFinanceState);
+          },
+        },
+      ]
+    );
   };
 
   const safeToSpend = Math.max(0, Math.round(financeData.balance / dateInfo.daysLeft));
@@ -119,21 +137,55 @@ export default function DashboardScreen() {
       updatedBalance -= newTx.amount;
     }
 
+    const updatedActivity = [
+      {
+        id: Date.now().toString(),
+        title: newTx.title,
+        sub: `${newTx.category} · Just now`,
+        amount: newTx.type === 'income' ? newTx.amount : -newTx.amount,
+        category: newTx.category,
+        icon: newTx.icon,
+      },
+      ...financeData.recentActivity,
+    ];
+
+    const expenseActivities = updatedActivity.filter((tx) => tx.amount < 0);
+    const totalExp = expenseActivities.reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
+
+    let updatedBreakdown = initialFinanceState.breakdown;
+    let updatedChartData = [];
+
+    if (totalExp > 0) {
+      const catTotals = { Food: 0, Boarding: 0, Transport: 0, Study: 0, Other: 0 };
+      expenseActivities.forEach((tx) => {
+        const cat = tx.category || 'Other';
+        catTotals[cat] = (catTotals[cat] || 0) + Math.abs(tx.amount);
+      });
+
+      updatedBreakdown = Object.keys(catTotals).map((cat) => ({
+        label: cat,
+        percent: Math.round((catTotals[cat] / totalExp) * 100),
+        color: CATEGORY_COLORS[cat] || '#64748b',
+      }));
+
+      updatedChartData = Object.keys(catTotals)
+        .filter((cat) => catTotals[cat] > 0)
+        .map((cat) => ({
+          name: cat,
+          population: catTotals[cat],
+          color: CATEGORY_COLORS[cat] || '#64748b',
+          legendFontColor: '#475569',
+          legendFontSize: 12,
+        }));
+    }
+
     const updatedData = {
-      ...financeData,
       income: updatedIncome,
       expenses: updatedExpenses,
       balance: updatedBalance,
-      recentActivity: [
-        {
-          id: Date.now().toString(),
-          title: newTx.title,
-          sub: `${newTx.category} · Just now`,
-          amount: newTx.type === 'income' ? newTx.amount : -newTx.amount,
-          icon: newTx.icon,
-        },
-        ...financeData.recentActivity,
-      ],
+      chartData: updatedChartData,
+      breakdown: updatedBreakdown,
+      recentActivity: updatedActivity,
     };
 
     saveFinanceData(updatedData);
@@ -152,6 +204,14 @@ export default function DashboardScreen() {
         <View className="flex-row justify-between items-center mb-3">
           <Text className="text-xl font-bold text-[#0f172a]">Smart Finance</Text>
           <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              onPress={handleResetAllData}
+              activeOpacity={0.8}
+              className="w-8 h-8 rounded-full bg-red-50 items-center justify-center border border-red-200"
+            >
+              <Ionicons name="refresh" size={16} color="#ef4444" />
+            </TouchableOpacity>
+
             <TouchableOpacity
               onPress={() => setShowManualModal(true)}
               activeOpacity={0.8}
@@ -228,61 +288,81 @@ export default function DashboardScreen() {
 
         <View className="bg-white rounded-3xl p-4 mb-4 shadow-sm border border-[#f1f5f9]">
           <Text className="text-sm font-bold text-[#0f172a] mb-2">Spending Breakdown</Text>
-          <View className="items-center">
-            <PieChart
-              data={financeData.chartData}
-              width={screenWidth - 56}
-              height={180}
-              chartConfig={chartConfig}
-              accessor="population"
-              backgroundColor="transparent"
-              paddingLeft="10"
-              absolute
-            />
-          </View>
-
-          <View className="mt-2">
-            {financeData.breakdown.map((item) => (
-              <View key={item.label} className="mb-2.5">
-                <View className="flex-row justify-between mb-1">
-                  <Text className="text-xs font-medium text-[#334155]">{item.label}</Text>
-                  <Text className="text-xs font-semibold text-[#0f172a]">{item.percent}%</Text>
-                </View>
-                <View className="h-2 bg-[#f1f5f9] rounded-full overflow-hidden">
-                  <View
-                    style={{ width: `${item.percent}%`, backgroundColor: item.color }}
-                    className="h-full rounded-full"
-                  />
-                </View>
+          
+          {financeData.expenses === 0 || !financeData.chartData || financeData.chartData.length === 0 ? (
+            <View className="py-8 items-center justify-center">
+              <Ionicons name="pie-chart-outline" size={44} color="#cbd5e1" />
+              <Text className="text-xs font-bold text-[#94a3b8] mt-2">No expenses recorded yet</Text>
+              <Text className="text-[11px] text-[#cbd5e1] mt-0.5">Breakdown chart is reset to Rs 0</Text>
+            </View>
+          ) : (
+            <>
+              <View className="items-center">
+                <PieChart
+                  data={financeData.chartData}
+                  width={screenWidth - 56}
+                  height={180}
+                  chartConfig={chartConfig}
+                  accessor="population"
+                  backgroundColor="transparent"
+                  paddingLeft="10"
+                  absolute
+                />
               </View>
-            ))}
-          </View>
+
+              <View className="mt-2">
+                {financeData.breakdown.map((item) => (
+                  <View key={item.label} className="mb-2.5">
+                    <View className="flex-row justify-between mb-1">
+                      <Text className="text-xs font-medium text-[#334155]">{item.label}</Text>
+                      <Text className="text-xs font-semibold text-[#0f172a]">{item.percent}%</Text>
+                    </View>
+                    <View className="h-2 bg-[#f1f5f9] rounded-full overflow-hidden">
+                      <View
+                        style={{ width: `${item.percent}%`, backgroundColor: item.color }}
+                        className="h-full rounded-full"
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
         </View>
 
         <View className="bg-white rounded-3xl p-4 shadow-sm border border-[#f1f5f9]">
           <View className="flex-row justify-between items-center mb-3">
             <Text className="text-sm font-bold text-[#0f172a]">Recent Activity</Text>
-            <TouchableOpacity>
-              <Text className="text-xs font-semibold text-[#4143d5]">See All</Text>
-            </TouchableOpacity>
+            {financeData.recentActivity.length > 0 && (
+              <TouchableOpacity>
+                <Text className="text-xs font-semibold text-[#4143d5]">See All</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          {financeData.recentActivity.map((item) => (
-            <View key={item.id} className="flex-row justify-between items-center py-2.5 border-b border-[#f8fafc] last:border-b-0">
-              <View className="flex-row items-center">
-                <View className="w-10 h-10 rounded-2xl bg-[#f1f5f9] items-center justify-center mr-3">
-                  <Ionicons name={item.icon} size={18} color="#4143d5" />
-                </View>
-                <View>
-                  <Text className="text-xs font-semibold text-[#0f172a]">{item.title}</Text>
-                  <Text className="text-[11px] text-[#64748b] mt-0.5">{item.sub}</Text>
-                </View>
-              </View>
-              <Text className={`text-xs font-bold ${item.amount < 0 ? 'text-[#ef4444]' : 'text-[#16a34a]'}`}>
-                {item.amount < 0 ? `- Rs ${Math.abs(item.amount)}` : `+ Rs ${item.amount}`}
-              </Text>
+          {financeData.recentActivity.length === 0 ? (
+            <View className="py-6 items-center justify-center">
+              <Ionicons name="receipt-outline" size={32} color="#cbd5e1" />
+              <Text className="text-xs text-[#94a3b8] mt-1.5">No recent transactions</Text>
             </View>
-          ))}
+          ) : (
+            financeData.recentActivity.map((item) => (
+              <View key={item.id} className="flex-row justify-between items-center py-2.5 border-b border-[#f8fafc] last:border-b-0">
+                <View className="flex-row items-center">
+                  <View className="w-10 h-10 rounded-2xl bg-[#f1f5f9] items-center justify-center mr-3">
+                    <Ionicons name={item.icon || 'receipt'} size={18} color="#4143d5" />
+                  </View>
+                  <View>
+                    <Text className="text-xs font-semibold text-[#0f172a]">{item.title}</Text>
+                    <Text className="text-[11px] text-[#64748b] mt-0.5">{item.sub}</Text>
+                  </View>
+                </View>
+                <Text className={`text-xs font-bold ${item.amount < 0 ? 'text-[#ef4444]' : 'text-[#16a34a]'}`}>
+                  {item.amount < 0 ? `- Rs ${Math.abs(item.amount)}` : `+ Rs ${item.amount}`}
+                </Text>
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
 

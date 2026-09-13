@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,19 +9,55 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const DASHBOARD_STORAGE_KEY = '@smart_finance_dashboard_data_v3';
 
 export default function CategoriesScreen() {
   const [categories, setCategories] = useState([
-    { id: '1', name: 'Food & Dining', spent: 4620, budget: 7000, icon: 'restaurant', color: '#4143d5' },
-    { id: '2', name: 'Boarding & Rent', spent: 4455, budget: 5000, icon: 'home', color: '#10b981' },
-    { id: '3', name: 'Transport', spent: 3465, budget: 4500, icon: 'bus', color: '#ef4444' },
-    { id: '4', name: 'Study & Campus', spent: 1980, budget: 2500, icon: 'book', color: '#a855f7' },
-    { id: '5', name: 'Other Expenses', spent: 1180, budget: 2000, icon: 'receipt', color: '#64748b' },
+    { id: '1', name: 'Food', spent: 0, budget: 15000, icon: 'restaurant', color: '#4143d5' },
+    { id: '2', name: 'Boarding', spent: 0, budget: 10000, icon: 'home', color: '#10b981' },
+    { id: '3', name: 'Transport', spent: 0, budget: 5000, icon: 'bus', color: '#ef4444' },
+    { id: '4', name: 'Study', spent: 0, budget: 4000, icon: 'book', color: '#a855f7' },
+    { id: '5', name: 'Other', spent: 0, budget: 3000, icon: 'receipt', color: '#64748b' },
   ]);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [newName, setNewName] = useState('');
   const [newBudget, setNewBudget] = useState('');
+
+  useEffect(() => {
+    loadCategoryExpenses();
+  }, []);
+
+  // Dashboard එකේ වියදම් අනුව Categories වල Spent අගයන් sync කරගැනීම
+  const loadCategoryExpenses = async () => {
+    try {
+      const saved = await AsyncStorage.getItem(DASHBOARD_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const activities = parsed.recentActivity || [];
+
+        // Category එක අනුව මුළු වියදම ගණනය කිරීම
+        const totals = { Food: 0, Boarding: 0, Transport: 0, Study: 0, Other: 0 };
+        activities.forEach((item) => {
+          if (item.amount < 0) {
+            const cat = item.category || 'Other';
+            totals[cat] = (totals[cat] || 0) + Math.abs(item.amount);
+          }
+        });
+
+        setCategories((prev) =>
+          prev.map((c) => ({
+            ...c,
+            spent: totals[c.name] || 0,
+          }))
+        );
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const totalSpent = categories.reduce((sum, item) => sum + item.spent, 0);
   const totalBudget = categories.reduce((sum, item) => sum + item.budget, 0);
@@ -61,6 +97,7 @@ export default function CategoriesScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Total Budget Card */}
         <View className="bg-white rounded-3xl p-5 shadow-sm border border-[#f1f5f9] mb-5">
           <Text className="text-xs font-bold text-[#64748b] uppercase tracking-wider mb-1">
             Monthly Category Budget
@@ -90,7 +127,7 @@ export default function CategoriesScreen() {
         </Text>
 
         {categories.map((cat) => {
-          const percent = Math.min(Math.round((cat.spent / cat.budget) * 100), 100);
+          const percent = cat.budget > 0 ? Math.min(Math.round((cat.spent / cat.budget) * 100), 100) : 0;
           const isOver = cat.spent > cat.budget;
 
           return (
@@ -137,6 +174,7 @@ export default function CategoriesScreen() {
         })}
       </ScrollView>
 
+      {/* Category Modal */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
         <View className="flex-1 bg-black/50 justify-end">
           <View className="bg-white rounded-t-[32px] p-6">
@@ -147,7 +185,7 @@ export default function CategoriesScreen() {
             <TextInput
               value={newName}
               onChangeText={setNewName}
-              placeholder="e.g. Entertainment"
+              placeholder="e.g. Medical"
               placeholderTextColor="#94a3b8"
               className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-4"
             />
@@ -157,7 +195,7 @@ export default function CategoriesScreen() {
               value={newBudget}
               onChangeText={setNewBudget}
               keyboardType="numeric"
-              placeholder="e.g. 5000"
+              placeholder="e.g. 3000"
               placeholderTextColor="#94a3b8"
               className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-6"
             />
