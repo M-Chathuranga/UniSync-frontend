@@ -159,9 +159,7 @@ export default function LoginScreen() {
         </View>
 
         <TouchableOpacity 
-          className="items-center pt-8 pb-8"
-          onPress={() => Alert.alert('Info', 'Registration flow is managed by your university portal.')}
-        >
+          onPress={() => router.push('/signup')}>
           <Text className="text-sm text-gray-500">
             Don't have an account? <Text className="text-indigo-600 font-bold">Sign Up</Text>
           </Text>
