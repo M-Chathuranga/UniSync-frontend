@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,21 +9,34 @@ import {
   TextInput,
   Animated,
   Easing,
-  PermissionsAndroid,
   Platform,
   Alert,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PieChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import {
+  useAudioRecorder,
+  AudioModule,
+  RecordingPresets,
+  setAudioModeAsync,
+} from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const screenWidth = Dimensions.get('window').width;
+
+// Storage keys
 const DASHBOARD_STORAGE_KEY = '@smart_finance_dashboard_data_v3';
 const AUTH_USER_KEY = '@smart_finance_auth_user';
 
+// Groq Whisper API Key
+const GROQ_API_KEY = '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';
+
+// Helper function to calculate current date details
 const getLiveDateInfo = () => {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' });
@@ -33,6 +46,7 @@ const getLiveDateInfo = () => {
   return { dateStr, monthStr, daysLeft };
 };
 
+// Initial state values for finances
 const initialFinanceState = {
   income: 0,
   expenses: 0,
@@ -48,6 +62,7 @@ const initialFinanceState = {
   recentActivity: [],
 };
 
+// Category colors mapping
 const CATEGORY_COLORS = {
   Food: '#4143d5',
   Boarding: '#10b981',
@@ -66,12 +81,16 @@ export default function DashboardScreen() {
   const [userProfile, setUserProfile] = useState({ name: 'User', email: '' });
   const [financeData, setFinanceData] = useState(initialFinanceState);
 
-  useEffect(() => {
-    setDateInfo(getLiveDateInfo());
-    loadUserSession();
-    loadFinanceData();
-  }, []);
+  // Reload data when dashboard screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      setDateInfo(getLiveDateInfo());
+      loadUserSession();
+      loadFinanceData();
+    }, [])
+  );
 
+  // Load user session from AsyncStorage
   const loadUserSession = async () => {
     try {
       const storedUser = await AsyncStorage.getItem(AUTH_USER_KEY);
@@ -79,10 +98,11 @@ export default function DashboardScreen() {
         setUserProfile(JSON.parse(storedUser));
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error loading session', e);
     }
   };
 
+  // Load financial state from AsyncStorage
   const loadFinanceData = async () => {
     try {
       const saved = await AsyncStorage.getItem(DASHBOARD_STORAGE_KEY);
@@ -92,19 +112,21 @@ export default function DashboardScreen() {
         setFinanceData(initialFinanceState);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error loading finance data', e);
     }
   };
 
+  // Save financial state to AsyncStorage
   const saveFinanceData = async (newData) => {
     try {
       setFinanceData(newData);
       await AsyncStorage.setItem(DASHBOARD_STORAGE_KEY, JSON.stringify(newData));
     } catch (e) {
-      console.error(e);
+      console.error('Error saving finance data', e);
     }
   };
 
+  // Reset all dashboard data to Rs 0
   const handleResetAllData = () => {
     Alert.alert(
       'Reset All Data',
@@ -122,8 +144,10 @@ export default function DashboardScreen() {
     );
   };
 
+  // Calculate safe to spend limit per day
   const safeToSpend = Math.max(0, Math.round(financeData.balance / dateInfo.daysLeft));
 
+  // Add new transaction and recompute analytics
   const handleAddNewTransaction = (newTx) => {
     let updatedExpenses = financeData.expenses;
     let updatedIncome = financeData.income;
@@ -201,6 +225,7 @@ export default function DashboardScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 110 }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Top App Header */}
         <View className="flex-row justify-between items-center mb-3">
           <Text className="text-xl font-bold text-[#0f172a]">Smart Finance</Text>
           <View className="flex-row items-center gap-2">
@@ -232,11 +257,13 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* User Greeting */}
         <Text className="text-2xl font-bold text-[#0f172a]">
           Hello, {userProfile.name} 👋
         </Text>
         <Text className="text-xs text-[#64748b] mt-0.5 mb-4">{dateInfo.dateStr}</Text>
 
+        {/* Safe To Spend Banner */}
         <View className="bg-[#f0fdf4] rounded-3xl p-5 flex-row justify-between items-center border border-[#dcfce7] mb-4">
           <View className="flex-1">
             <Text className="text-[11px] font-bold text-[#16a34a] tracking-wider">
@@ -254,6 +281,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* Summary Metric Cards */}
         <View className="flex-row justify-between mb-4">
           <View className="flex-1 bg-white rounded-3xl p-3.5 items-center mx-1 shadow-sm border border-[#f1f5f9]">
             <View className="w-8 h-8 rounded-full bg-[#dcfce7] items-center justify-center mb-1">
@@ -286,6 +314,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* Breakdown Card */}
         <View className="bg-white rounded-3xl p-4 mb-4 shadow-sm border border-[#f1f5f9]">
           <Text className="text-sm font-bold text-[#0f172a] mb-2">Spending Breakdown</Text>
           
@@ -330,11 +359,12 @@ export default function DashboardScreen() {
           )}
         </View>
 
+        {/* Recent Transactions List */}
         <View className="bg-white rounded-3xl p-4 shadow-sm border border-[#f1f5f9]">
           <View className="flex-row justify-between items-center mb-3">
             <Text className="text-sm font-bold text-[#0f172a]">Recent Activity</Text>
             {financeData.recentActivity.length > 0 && (
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push('/tabs/history')}>
                 <Text className="text-xs font-semibold text-[#4143d5]">See All</Text>
               </TouchableOpacity>
             )}
@@ -366,6 +396,7 @@ export default function DashboardScreen() {
         </View>
       </ScrollView>
 
+      {/* Floating Center Voice Mic Button */}
       <View className="absolute bottom-6 self-center items-center justify-center">
         <View className="w-16 h-16 rounded-full bg-[#4143d5]/20 items-center justify-center">
           <TouchableOpacity
@@ -379,6 +410,7 @@ export default function DashboardScreen() {
         </View>
       </View>
 
+      {/* Modals */}
       <InternalVoiceModal
         visible={showVoiceModal}
         onClose={() => setShowVoiceModal(false)}
@@ -394,6 +426,7 @@ export default function DashboardScreen() {
   );
 }
 
+// Manual Transaction Entry Modal
 function ManualAddModal({ visible, onClose, onAddTransaction }) {
   const [type, setType] = useState('expense');
   const [title, setTitle] = useState('');
@@ -441,8 +474,9 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
         <View className="bg-white rounded-t-[32px] px-6 pt-5 pb-9">
           <View className="w-12 h-1 bg-gray-300 rounded-full self-center mb-4" />
 
-          <Text className="text-lg font-bold text-[#0f172a] mb-4">Add Transaction</Text>
+          <Text className="text-lg font-bold text-[#0f172a]">Add Transaction</Text>
 
+          {/* Toggle Type */}
           <View className="flex-row bg-[#f1f5f9] p-1 rounded-2xl mb-4">
             <TouchableOpacity
               onPress={() => setType('expense')}
@@ -467,6 +501,7 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
             </TouchableOpacity>
           </View>
 
+          {/* Description Input */}
           <Text className="text-xs font-semibold text-[#64748b] mb-1">Title / Description</Text>
           <TextInput
             value={title}
@@ -476,6 +511,7 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
             className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-3"
           />
 
+          {/* Amount Input */}
           <Text className="text-xs font-semibold text-[#64748b] mb-1">Amount (Rs)</Text>
           <TextInput
             value={amount}
@@ -486,6 +522,7 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
             className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-4"
           />
 
+          {/* Categories Grid */}
           {type === 'expense' && (
             <>
               <Text className="text-xs font-semibold text-[#64748b] mb-2">Category</Text>
@@ -522,6 +559,7 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
             </>
           )}
 
+          {/* Actions */}
           <View className="flex-row gap-3 mt-2">
             <TouchableOpacity
               onPress={onClose}
@@ -543,14 +581,18 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
   );
 }
 
+// Voice Assistant Modal using expo-file-system/legacy and Groq Whisper
 function InternalVoiceModal({ visible, onClose, onAddExpense }) {
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [spokenText, setSpokenText] = useState('');
   const [detectedExpense, setDetectedExpense] = useState(null);
 
   const pulseAnim1 = useRef(new Animated.Value(1)).current;
   const pulseAnim2 = useRef(new Animated.Value(1)).current;
 
+  // Pulse animation while listening
   useEffect(() => {
     if (isRecording) {
       Animated.loop(
@@ -591,77 +633,145 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
     }
   }, [isRecording]);
 
+  // Reset modal state on open
   useEffect(() => {
     if (visible) {
-      setIsRecording(false);
       setSpokenText('');
       setDetectedExpense(null);
+      setIsRecording(false);
+      setIsProcessing(false);
     }
   }, [visible]);
 
-  const requestMicrophonePermission = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-          {
-            title: 'Microphone Permission',
-            message: 'Smart Finance needs access to your microphone to record voice expenses.',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          }
-        );
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) {
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const toggleRecording = async () => {
-    if (!isRecording) {
-      const hasPermission = await requestMicrophonePermission();
-
-      if (!hasPermission) {
-        Alert.alert('Permission Required', 'Microphone permission is required.');
+  // Start audio capture
+  const startAudioRecording = async () => {
+    try {
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission Denied', 'Microphone permission is required to record voice.');
         return;
       }
 
-      setIsRecording(true);
-      setSpokenText('Listening to audio...');
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        allowsRecording: true,
+      });
+
+      setSpokenText('');
       setDetectedExpense(null);
 
-      setTimeout(() => {
-        setIsRecording(false);
-        parseExpense('Rs 250 for canteen lunch');
-      }, 2500);
-    } else {
-      setIsRecording(false);
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Recording start error', err);
+      Alert.alert('Microphone Error', 'Could not open microphone for recording.');
     }
   };
 
+  // Stop recording and transcribe audio via native FileSystem upload
+  const stopAudioRecordingAndTranscribe = async () => {
+    try {
+      setIsRecording(false);
+      setIsProcessing(true);
+
+      await audioRecorder.stop();
+      const rawUri = audioRecorder.uri;
+
+      if (!rawUri) {
+        setIsProcessing(false);
+        Alert.alert('Recording Notice', 'No audio was captured. Please speak again.');
+        return;
+      }
+
+      // Ensure file scheme is prefixed properly for Android
+      const fileUri = rawUri.startsWith('file://') || rawUri.startsWith('content://')
+        ? rawUri
+        : `file://${rawUri}`;
+
+      // Upload directly to Groq Whisper endpoint using legacy multipart upload
+      const uploadResult = await FileSystem.uploadAsync(
+        'https://api.groq.com/openai/v1/audio/transcriptions',
+        fileUri,
+        {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          mimeType: 'audio/m4a',
+          parameters: {
+            model: 'whisper-large-v3',
+            language: 'en',
+            prompt: 'Expense tracker: Rs, rupees, canteen, food, bus fare, lunch, tea, photocopy, boarding, rent',
+          },
+          headers: {
+            Authorization: `Bearer ${GROQ_API_KEY.trim()}`,
+          },
+        }
+      );
+
+      setIsProcessing(false);
+
+      if (uploadResult && (uploadResult.status === 200 || uploadResult.status === 201) && uploadResult.body) {
+        const result = JSON.parse(uploadResult.body);
+        if (result.text) {
+          parseExpense(result.text);
+        } else {
+          Alert.alert('Recognition Failed', 'Could not detect speech in audio.');
+        }
+      } else {
+        let errorDetails = `HTTP ${uploadResult?.status}`;
+        try {
+          const parsed = JSON.parse(uploadResult?.body || '{}');
+          if (parsed?.error?.message) {
+            errorDetails = parsed.error.message;
+          }
+        } catch (e) {}
+        console.error('Groq API Error:', uploadResult?.status, uploadResult?.body);
+        Alert.alert('AI Speech Error', errorDetails);
+      }
+    } catch (err) {
+      setIsProcessing(false);
+      console.error('Transcription error', err);
+      Alert.alert('Upload Error', err?.message || 'Failed to upload audio to speech service.');
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopAudioRecordingAndTranscribe();
+    } else {
+      startAudioRecording();
+    }
+  };
+
+  // Extract amount and category from transcription
   const parseExpense = (text) => {
     setSpokenText(text);
     const clean = text.toLowerCase();
+
+    // Regex to extract numeric amount
     const match = clean.match(/(?:rs\.?|rupees)?\s*(\d+(?:\.\d{1,2})?)/i);
     const amount = match ? parseFloat(match[1]) : 0;
 
     let category = 'Other';
     let icon = 'receipt';
-    if (/(lunch|canteen|food|tea|dinner|breakfast|snack|rice|coffee|kottu)/i.test(clean)) {
+
+    // Keyword detection
+    if (/(lunch|canteen|food|tea|dinner|breakfast|snack|rice|coffee|kottu|meal|bread|roll|bun)/i.test(clean)) {
       category = 'Food';
       icon = 'restaurant';
-    } else if (/(bus|transit|train|ticket|uber|pickme|fuel|petrol)/i.test(clean)) {
+    } else if (/(bus|transit|train|ticket|uber|pickme|fuel|petrol|van|ride)/i.test(clean)) {
       category = 'Transport';
       icon = 'bus';
-    } else if (/(boarding|rent|room|hostel)/i.test(clean)) {
+    } else if (/(boarding|rent|room|hostel|bodim)/i.test(clean)) {
       category = 'Boarding';
       icon = 'home';
-    } else if (/(book|study|photocopy|pen|print|exam|class)/i.test(clean)) {
+    } else if (/(book|study|photocopy|pen|print|exam|class|tuition|note)/i.test(clean)) {
       category = 'Study';
       icon = 'book';
+    } else if (/(doctor|medicine|pharmacy|hospital|tablet)/i.test(clean)) {
+      category = 'Medical';
+      icon = 'pricetag';
     }
 
     if (amount > 0) {
@@ -671,6 +781,8 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
         category: category,
         icon: icon,
       });
+    } else {
+      setDetectedExpense(null);
     }
   };
 
@@ -685,58 +797,77 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 bg-black/50 justify-end">
         <View className="bg-white rounded-t-[36px] px-6 pt-6 pb-10 items-center shadow-2xl">
-          <View className="w-12 h-1.5 bg-gray-300 rounded-full mb-5" />
+          <View className="w-12 h-1.5 bg-gray-300 rounded-full mb-4" />
 
-          <Text className="text-xl font-extrabold text-[#0f172a]">Voice Assistant</Text>
-          <Text className="text-xs text-[#64748b] mt-1 mb-6 text-center">
-            {isRecording ? 'Listening... Tap mic to stop' : 'Tap microphone or choose a prompt'}
+          <Text className="text-xl font-extrabold text-[#0f172a]">AI Voice Assistant</Text>
+          <Text className="text-xs text-[#64748b] mt-1 mb-3 text-center">
+            {isRecording
+              ? 'Listening... Tap mic to stop'
+              : isProcessing
+              ? 'Transcribing with Groq AI...'
+              : 'Tap mic button to speak your expense'}
           </Text>
 
-          <View className="items-center justify-center my-4 h-36 w-36">
+          {/* Voice Input Field (Keyboard Mic Support) */}
+          <View className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl px-4 py-2.5 my-2 flex-row items-center">
+            <Ionicons name="mic-circle" size={26} color="#4143d5" />
+            <TextInput
+              placeholder="e.g. Bus fare 120 or Rice 450"
+              placeholderTextColor="#94a3b8"
+              value={spokenText}
+              onChangeText={(text) => parseExpense(text)}
+              className="flex-1 ml-2 text-xs text-[#0f172a]"
+            />
+            {spokenText.length > 0 && (
+              <TouchableOpacity onPress={() => { setSpokenText(''); setDetectedExpense(null); }}>
+                <Ionicons name="close-circle" size={18} color="#94a3b8" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Center Mic Recording Button */}
+          <View className="items-center justify-center my-3 h-28 w-28">
             <Animated.View
               style={{
                 transform: [{ scale: pulseAnim2 }],
                 opacity: pulseAnim2.interpolate({ inputRange: [1, 1.7], outputRange: [0.35, 0] }),
               }}
-              className="absolute w-32 h-32 rounded-full bg-[#4143d5]"
+              className="absolute w-28 h-28 rounded-full bg-[#4143d5]"
             />
             <Animated.View
               style={{
                 transform: [{ scale: pulseAnim1 }],
                 opacity: pulseAnim1.interpolate({ inputRange: [1, 1.45], outputRange: [0.5, 0.05] }),
               }}
-              className="absolute w-24 h-24 rounded-full bg-[#818cf8]"
+              className="absolute w-20 h-20 rounded-full bg-[#818cf8]"
             />
             <TouchableOpacity
               activeOpacity={0.9}
+              disabled={isProcessing}
               onPress={toggleRecording}
-              className={`w-20 h-20 rounded-full items-center justify-center shadow-xl border-4 border-[#e0e7ff] ${
+              className={`w-16 h-16 rounded-full items-center justify-center shadow-lg border-2 border-white ${
                 isRecording ? 'bg-[#ef4444]' : 'bg-[#4143d5]'
               }`}
               style={{ elevation: 10 }}
             >
-              <Ionicons name={isRecording ? 'stop' : 'mic'} size={34} color="#ffffff" />
+              {isProcessing ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Ionicons name={isRecording ? 'stop' : 'mic'} size={28} color="#ffffff" />
+              )}
             </TouchableOpacity>
           </View>
 
-          <View className="w-full bg-[#f8fafc] border border-gray-200 rounded-2xl p-3.5 my-3">
-            <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-              Spoken Query:
-            </Text>
-            <Text className="text-sm font-semibold text-[#0f172a] italic">
-              {spokenText ? `"${spokenText}"` : 'Tap mic or choose a prompt below'}
-            </Text>
-          </View>
-
+          {/* Detected Expense Card */}
           {detectedExpense && (
             <View className="w-full bg-[#ecfdf5] border border-[#a7f3d0] rounded-2xl p-4 my-2 flex-row justify-between items-center">
-              <View className="flex-row items-center">
+              <View className="flex-row items-center flex-1">
                 <View className="w-10 h-10 rounded-xl bg-[#d1fae5] items-center justify-center mr-3">
                   <Ionicons name={detectedExpense.icon} size={20} color="#059669" />
                 </View>
-                <View>
+                <View className="flex-1">
                   <Text className="text-xs font-bold text-[#065f46]">{detectedExpense.category}</Text>
-                  <Text className="text-[11px] text-gray-500">{detectedExpense.title}</Text>
+                  <Text className="text-[11px] text-gray-500" numberOfLines={1}>{detectedExpense.title}</Text>
                 </View>
               </View>
               <Text className="text-base font-extrabold text-[#047857]">
@@ -745,11 +876,12 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
             </View>
           )}
 
-          <Text className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-2 mb-2 self-start">
-            Quick Prompts:
+          {/* Quick Examples */}
+          <Text className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-1 mb-2 self-start">
+            Quick Examples:
           </Text>
-          <View className="flex-row flex-wrap gap-2 mb-4 w-full">
-            {['Rs 250 for lunch', 'Bus fare 60', 'Rs 350 for books'].map((sample) => (
+          <View className="flex-row flex-wrap gap-2 mb-3 w-full">
+            {['Bus fare 60', 'Canteen tea 70', 'Photocopy 120', 'Hostel rent 8000'].map((sample) => (
               <TouchableOpacity
                 key={sample}
                 onPress={() => parseExpense(sample)}
@@ -760,10 +892,11 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
             ))}
           </View>
 
-          <View className="flex-row gap-3 w-full mt-2">
+          {/* Actions */}
+          <View className="flex-row gap-3 w-full mt-1">
             <TouchableOpacity
               onPress={onClose}
-              className="flex-1 bg-gray-100 py-3.5 rounded-2xl items-center justify-center"
+              className="flex-1 bg-gray-100 py-3 rounded-2xl items-center justify-center"
             >
               <Text className="text-xs font-bold text-[#475569]">Cancel</Text>
             </TouchableOpacity>
@@ -771,7 +904,7 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
             <TouchableOpacity
               onPress={handleSave}
               disabled={!detectedExpense}
-              className={`flex-1 py-3.5 rounded-2xl items-center justify-center shadow-md ${
+              className={`flex-1 py-3 rounded-2xl items-center justify-center shadow-md ${
                 detectedExpense ? 'bg-[#4143d5]' : 'bg-gray-300'
               }`}
             >
