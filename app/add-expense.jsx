@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Voice from '@react-native-voice/voice';
+//import Voice from '@react-native-voice/voice';
 import SafeToSpendCard from '../components/SafeToSpendCard';
 import VoiceListeningOverlay from '../components/VoiceListeningOverlay';
 
@@ -14,7 +14,7 @@ export default function AddExpenseScreen() {
     Voice.onSpeechResults = (e) => setHeardText(e.value?.[0] || '');
     Voice.onSpeechError = () => setIsListening(false);
     return () => {
-      Voice.destroy().then(Voice.removeAllListeners);
+      //Voice.destroy().then(Voice.removeAllListeners);
     };
   }, []);
 
