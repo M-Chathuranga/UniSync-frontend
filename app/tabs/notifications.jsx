@@ -13,43 +13,13 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState([
     {
       id: '1',
-      title: 'Food Budget Alert',
-      message: 'You have spent 66% of your monthly Food & Dining budget.',
-      time: '10m ago',
-      type: 'alert',
-      icon: 'warning',
-      color: '#ef4444',
-      read: false,
-    },
-    {
-      id: '2',
-      title: 'Daily Spending Insight',
-      message: 'You stayed within your safe-to-spend limit yesterday. Great job!',
-      time: '2h ago',
+      title: 'Welcome to Smart Finance! 🎉',
+      message: 'Your account is now ready. Start logging your daily canteen and transport expenses.',
+      time: 'Just now',
       type: 'insight',
       icon: 'sparkles',
-      color: '#10b981',
-      read: false,
-    },
-    {
-      id: '3',
-      title: 'Transport Expense Added',
-      message: 'Rs 60 for Bus fare recorded via voice assistant.',
-      time: 'Yesterday',
-      type: 'update',
-      icon: 'checkmark-circle',
       color: '#4143d5',
-      read: true,
-    },
-    {
-      id: '4',
-      title: 'Boarding Rent Reminder',
-      message: 'Monthly boarding rent is due in 5 days.',
-      time: '2 days ago',
-      type: 'alert',
-      icon: 'time',
-      color: '#f59e0b',
-      read: true,
+      read: false,
     },
   ]);
 
@@ -86,9 +56,11 @@ export default function NotificationsScreen() {
               </View>
             )}
           </View>
-          <TouchableOpacity onPress={markAllAsRead}>
-            <Text className="text-xs font-semibold text-[#4143d5]">Mark all as read</Text>
-          </TouchableOpacity>
+          {notifications.length > 0 && (
+            <TouchableOpacity onPress={markAllAsRead}>
+              <Text className="text-xs font-semibold text-[#4143d5]">Mark all as read</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View className="flex-row gap-2 mb-4">
@@ -120,7 +92,7 @@ export default function NotificationsScreen() {
               <Ionicons name="notifications-off-outline" size={28} color="#4143d5" />
             </View>
             <Text className="text-sm font-bold text-[#0f172a]">No notifications</Text>
-            <Text className="text-xs text-[#64748b] mt-1">You're all caught up for now!</Text>
+            <Text className="text-xs text-[#64748b] mt-1">You're completely up to date!</Text>
           </View>
         ) : (
           filteredNotifications.map((item) => (

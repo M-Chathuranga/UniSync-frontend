@@ -1,21 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BarChart } from 'react-native-chart-kit';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const screenWidth = Dimensions.get('window').width;
+const DASHBOARD_STORAGE_KEY = '@smart_finance_dashboard_data_v3';
 
 export default function HistoryScreen() {
   const [selectedFilter, setSelectedFilter] = useState('All');
+  const [transactions, setTransactions] = useState([]);
+  const [totalSpentWeek, setTotalSpentWeek] = useState(0);
 
-  const filters = ['All', 'Food', 'Transport', 'Fixed'];
+  const filters = ['All', 'Food', 'Transport', 'Study'];
+
+  useEffect(() => {
+    loadHistoryData();
+  }, []);
+
+  const loadHistoryData = async () => {
+    try {
+      const saved = await AsyncStorage.getItem(DASHBOARD_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const activities = parsed.recentActivity || [];
+        setTransactions(activities);
+
+        // සතියේ මුළු වියදම ගණනය කිරීම
+        const expSum = activities
+          .filter((tx) => tx.amount < 0)
+          .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+        setTotalSpentWeek(expSum);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const filteredTransactions = transactions.filter((tx) => {
+    if (selectedFilter === 'All') return true;
+    return tx.category === selectedFilter;
+  });
 
   const barData = {
     labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     datasets: [
       {
-        data: [450, 680, 320, 890, 1250, 540, 730],
+        data: [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          totalSpentWeek > 0 ? totalSpentWeek : 0, // අද දිනට වියදම් එකතුව
+        ],
       },
     ],
   };
@@ -42,20 +82,22 @@ export default function HistoryScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View className="flex-row items-center justify-between mb-2">
-          <TouchableOpacity className="w-8">
-            <Ionicons name="arrow-back" size={20} color="#0f172a" />
-          </TouchableOpacity>
+          <View className="w-8" />
           <Text className="text-lg font-bold text-[#4143d5]">History</Text>
-          <TouchableOpacity className="w-8 items-end">
-            <Ionicons name="settings-sharp" size={20} color="#94a3b8" />
-          </TouchableOpacity>
+          <View className="w-8" />
         </View>
 
+        {/* Weekly Header Summary */}
         <View className="items-center my-3">
-          <Text className="text-3xl font-extrabold text-[#0f172a]">Rs 4,860</Text>
-          <Text className="text-xs text-gray-400 mt-1">Spent in this week · 24 transactions</Text>
+          <Text className="text-3xl font-extrabold text-[#0f172a]">
+            Rs {totalSpentWeek.toLocaleString()}
+          </Text>
+          <Text className="text-xs text-gray-400 mt-1">
+            Spent in this week · {transactions.length} transactions
+          </Text>
         </View>
 
+        {/* Weekly Bar Chart */}
         <View className="bg-white rounded-3xl p-4 shadow-sm border border-[#f1f5f9] mb-4 items-center">
           <Text className="text-xs font-bold text-[#0f172a] self-start mb-2 px-1">
             Weekly Spending Trend
@@ -67,11 +109,12 @@ export default function HistoryScreen() {
             yAxisLabel="Rs "
             chartConfig={chartConfig}
             verticalLabelRotation={0}
-            showValuesOnTopOfBars={true}
+            showValuesOnTopOfBars={false}
             fromZero={true}
           />
         </View>
 
+        {/* Filter Chips */}
         <View className="flex-row gap-2 mb-4">
           {filters.map((filter) => {
             const isSelected = selectedFilter === filter;
@@ -95,69 +138,42 @@ export default function HistoryScreen() {
           })}
         </View>
 
-        <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2.5 px-1">
-          TODAY
-        </Text>
-
-        <View className="bg-white rounded-2xl p-4 shadow-sm border border-[#f1f5f9] mb-4">
-          <View className="flex-row justify-between items-center pb-3 border-b border-[#f8fafc]">
-            <View className="flex-row items-center">
-              <View className="w-10 h-10 rounded-2xl bg-[#fef2f2] items-center justify-center mr-3">
-                <Text className="text-lg">🍽️</Text>
-              </View>
-              <View>
-                <Text className="text-xs font-bold text-[#0f172a]">Campus Cafe</Text>
-                <Text className="text-[11px] text-gray-400">Food · 12:30 PM</Text>
-              </View>
+        {/* Transactions List */}
+        {filteredTransactions.length === 0 ? (
+          <View className="bg-white rounded-3xl p-8 items-center justify-center border border-[#f1f5f9] shadow-sm my-2">
+            <View className="w-14 h-14 rounded-2xl bg-[#ede9fe] items-center justify-center mb-3">
+              <Ionicons name="receipt-outline" size={26} color="#4143d5" />
             </View>
-            <Text className="text-xs font-bold text-[#ef4444]">-Rs 200</Text>
+            <Text className="text-sm font-bold text-[#0f172a]">No Transactions Found</Text>
+            <Text className="text-xs text-[#94a3b8] text-center mt-1">
+              Logged transactions will show up here.
+            </Text>
           </View>
-
-          <View className="flex-row justify-between items-center pt-3">
-            <View className="flex-row items-center">
-              <View className="w-10 h-10 rounded-2xl bg-[#ecfdf5] items-center justify-center mr-3">
-                <Text className="text-lg">🚌</Text>
+        ) : (
+          filteredTransactions.map((item) => (
+            <View
+              key={item.id}
+              className="bg-white rounded-2xl p-4 mb-2.5 flex-row justify-between items-center border border-[#f1f5f9] shadow-sm"
+            >
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-2xl bg-[#f1f5f9] items-center justify-center mr-3">
+                  <Ionicons name={item.icon || 'receipt'} size={18} color="#4143d5" />
+                </View>
+                <View>
+                  <Text className="text-xs font-semibold text-[#0f172a]">{item.title}</Text>
+                  <Text className="text-[11px] text-[#64748b] mt-0.5">{item.sub}</Text>
+                </View>
               </View>
-              <View>
-                <Text className="text-xs font-bold text-[#0f172a]">City Transit</Text>
-                <Text className="text-[11px] text-gray-400">Transport · 08:15 AM</Text>
-              </View>
+              <Text
+                className={`text-xs font-bold ${
+                  item.amount < 0 ? 'text-[#ef4444]' : 'text-[#16a34a]'
+                }`}
+              >
+                {item.amount < 0 ? `- Rs ${Math.abs(item.amount)}` : `+ Rs ${item.amount}`}
+              </Text>
             </View>
-            <Text className="text-xs font-bold text-[#ef4444]">-Rs 45</Text>
-          </View>
-        </View>
-
-        <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2.5 px-1">
-          YESTERDAY
-        </Text>
-
-        <View className="bg-white rounded-2xl p-4 shadow-sm border border-[#f1f5f9] mb-4">
-          <View className="flex-row justify-between items-center pb-3 border-b border-[#f8fafc]">
-            <View className="flex-row items-center">
-              <View className="w-10 h-10 rounded-2xl bg-[#f0fdf4] items-center justify-center mr-3">
-                <Text className="text-lg">🛍️</Text>
-              </View>
-              <View>
-                <Text className="text-xs font-bold text-[#0f172a]">Stationery Store</Text>
-                <Text className="text-[11px] text-gray-400">Supplies · 04:20 PM</Text>
-              </View>
-            </View>
-            <Text className="text-xs font-bold text-[#ef4444]">-Rs 350</Text>
-          </View>
-
-          <View className="flex-row justify-between items-center pt-3">
-            <View className="flex-row items-center">
-              <View className="w-10 h-10 rounded-2xl bg-[#fff7ed] items-center justify-center mr-3">
-                <Text className="text-lg">☕</Text>
-              </View>
-              <View>
-                <Text className="text-xs font-bold text-[#0f172a]">Library Coffee</Text>
-                <Text className="text-[11px] text-gray-400">Food · 10:00 AM</Text>
-              </View>
-            </View>
-            <Text className="text-xs font-bold text-[#ef4444]">-Rs 120</Text>
-          </View>
-        </View>
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
