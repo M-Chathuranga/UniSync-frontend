@@ -32,8 +32,10 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
+    // 1. Basic validation - Check if fields are empty
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
@@ -45,24 +47,58 @@ export default function LoginScreen() {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const displayName = extractNameFromEmail(cleanEmail);
-
-    const userSession = {
-      email: cleanEmail,
-      name: displayName,
-      role: 'Student Account',
-      loggedInAt: new Date().toISOString(),
-      rememberMe: rememberMe,
-    };
+    setLoading(true);
 
     try {
-      await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(userSession));
-      router.replace('/tabs');
+      // 2. Define backend API URL from .env file
+      const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/auth/login`;
+
+      // 3. Send HTTP POST request to Express Backend
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: password,
+        }),
+      });
+
+      // 4. Parse the JSON response from Backend
+      const data = await response.json();
+
+      // 5. Check if HTTP Status Code is 200 (Success)
+      if (response.status === 200) {
+        // Prepare user session object with real JWT token and User details from DB
+        const userSession = {
+          token: data.token,
+          email: data.user.email,
+          name: data.user.name,
+          rememberMe: rememberMe,
+          loggedInAt: new Date().toISOString(),
+        };
+
+        // Save session data to phone storage
+        await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(userSession));
+
+        // Navigate to dashboard/tabs screen
+        router.replace('/tabs');
+      } else {
+        // Handle HTTP 400 or 401 response errors sent from controller
+        Alert.alert('Login Failed', data.message || 'Invalid email or password');
+      }
+
     } catch (error) {
-      Alert.alert('Error', 'Failed to save login session.');
+      // Handle Network level errors (IP address mismatched, server offline, etc.)
+      console.error('Network Error:', error);
+      Alert.alert('Network Error', 'Unable to connect to the backend server. Check Wi-Fi & IP address.');
+      
+    }finally {
+      setLoading(false);
     }
   };
-
+  
   return (
     <ScrollView 
       contentContainerStyle={{ flexGrow: 1 }} 

@@ -21,12 +21,50 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSignUp = () => {
+  const [loading, setLoading] = useState(false);
+
+  const handleSignUp = async () => {
     if (!firstName || !lastName || !email || !password) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
-    router.replace('/tabs');
+
+    setLoading(true);
+
+    try {
+      const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/auth/register`;
+
+      // Send POST request with user parameters
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim().toLowerCase(),
+          password: password,
+        }),
+      });
+
+      const data = await response.json();
+
+      // Handle 201 Created status
+      if (response.status === 201) {
+        Alert.alert('Success', 'Account created successfully!', [
+          { text: 'Log In Now', onPress: () => router.replace('/login') },
+        ]);
+      } else {
+        // Handle bad request / user already exists
+        Alert.alert('Registration Failed', data.message || 'Could not register user');
+      }
+    } catch (error) {
+      console.error('Registration Error:', error);
+      Alert.alert('Network Error', 'Unable to connect to backend server.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
