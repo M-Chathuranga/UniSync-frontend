@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,59 +11,80 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
+import { api } from '../../services/api';
 
 const screenWidth = Dimensions.get('window').width;
-const DASHBOARD_STORAGE_KEY = '@smart_finance_dashboard_data_v3';
 
+// Category color map for UI consistency
 const CATEGORY_COLORS = {
   Food: '#4143d5',
   Boarding: '#10b981',
   Transport: '#ef4444',
   Study: '#a855f7',
   Other: '#64748b',
+  Medical: '#ec4899',
 };
 
-const CATEGORIES = ['All', 'Food', 'Transport', 'Study', 'Boarding', 'Other'];
+// Filter categories for pill selector
+const CATEGORIES = ['All', 'Food', 'Transport', 'Study', 'Boarding', 'Medical', 'Other'];
 
 export default function HistoryScreen() {
   const [transactions, setTransactions] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
 
-  // සතියේ දින 7 සඳහා වියදම් State
+  // Weekly chart data (Mon–Sun totals)
   const [weeklyData, setWeeklyData] = useState([0, 0, 0, 0, 0, 0, 0]);
   const [weeklyTotal, setWeeklyTotal] = useState(0);
   const [weeklyCount, setWeeklyCount] = useState(0);
 
+  // Re-load expense data every time this tab gets focus
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       loadHistoryData();
     }, [])
   );
 
+  // Fetch all expenses from the backend API for the logged-in user
   const loadHistoryData = async () => {
     try {
-      const dataStr = await AsyncStorage.getItem(DASHBOARD_STORAGE_KEY);
-      if (dataStr) {
-        const parsed = JSON.parse(dataStr);
-        const allTx = parsed.recentActivity || [];
-        setTransactions(allTx);
-        calculateWeeklyTrend(allTx);
-      }
+      const expenses = await api.getExpenses(); // GET /expenses → filtered by req.user.id
+
+      // Map backend expense objects to UI-friendly transaction format
+      const allTx = expenses.map(tx => ({
+        id: tx._id,
+        title: tx.title,
+        sub: `${tx.category} · ${new Date(tx.date).toLocaleDateString()}`,
+        amount: -tx.amount,        // Display as negative (expense)
+        category: tx.category,
+        icon: getIconForCategory(tx.category),
+        dateTimestamp: new Date(tx.date).getTime(), // Used for weekly bucketing
+      }));
+
+      setTransactions(allTx);
+      calculateWeeklyTrend(allTx);
     } catch (e) {
-      console.error(e);
+      console.error('Error loading history from API:', e);
     }
   };
 
-  // සතියේ දින (Mon - Sun) අනුව වියදම් ගණනය කිරීම
+  // Map category name to Ionicons icon name
+  const getIconForCategory = (cat) => {
+    if (cat === 'Food') return 'restaurant';
+    if (cat === 'Transport') return 'bus';
+    if (cat === 'Boarding') return 'home';
+    if (cat === 'Study') return 'book';
+    if (cat === 'Medical') return 'pricetag';
+    return 'receipt';
+  };
+
+  // Calculate Mon–Sun spending totals and summary counts for the weekly chart
   const calculateWeeklyTrend = (allTx) => {
     const dayTotals = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
+    const daysMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     let totalSpentWeek = 0;
     let countWeek = 0;
-
-    const daysMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
     allTx.forEach((tx) => {
       if (tx.amount < 0) {
@@ -71,8 +92,8 @@ export default function HistoryScreen() {
         totalSpentWeek += expense;
         countWeek += 1;
 
-        // Transaction එක දැමූ දිනය ලබා ගැනීම
-        const txDate = tx.id && !isNaN(parseInt(tx.id)) ? new Date(parseInt(tx.id)) : new Date();
+        // Determine which day of the week this expense belongs to
+        const txDate = new Date(tx.dateTimestamp);
         const dayName = daysMap[txDate.getDay()];
         if (dayTotals[dayName] !== undefined) {
           dayTotals[dayName] += expense;
@@ -93,73 +114,7 @@ export default function HistoryScreen() {
     ]);
   };
 
-  // Transaction එකක් Delete කර Data නැවත ගණනය කිරීම
-  const handleDeleteTransaction = (id) => {
-    Alert.alert(
-      'Delete Transaction',
-      'Are you sure you want to remove this transaction?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const dataStr = await AsyncStorage.getItem(DASHBOARD_STORAGE_KEY);
-              if (!dataStr) return;
-
-              let data = JSON.parse(dataStr);
-              const txToDelete = data.recentActivity.find((t) => t.id === id);
-              if (!txToDelete) return;
-
-              if (txToDelete.amount > 0) {
-                data.income -= txToDelete.amount;
-                data.balance -= txToDelete.amount;
-              } else {
-                data.expenses -= Math.abs(txToDelete.amount);
-                data.balance += Math.abs(txToDelete.amount);
-              }
-
-              data.recentActivity = data.recentActivity.filter((t) => t.id !== id);
-
-              const expenseActivities = data.recentActivity.filter((t) => t.amount < 0);
-              const totalExp = expenseActivities.reduce((acc, t) => acc + Math.abs(t.amount), 0);
-
-              const catTotals = { Food: 0, Boarding: 0, Transport: 0, Study: 0, Other: 0 };
-              expenseActivities.forEach((t) => {
-                const cat = t.category || 'Other';
-                catTotals[cat] = (catTotals[cat] || 0) + Math.abs(t.amount);
-              });
-
-              data.breakdown = Object.keys(catTotals).map((cat) => ({
-                label: cat,
-                percent: totalExp > 0 ? Math.round((catTotals[cat] / totalExp) * 100) : 0,
-                color: CATEGORY_COLORS[cat] || '#64748b',
-              }));
-
-              data.chartData = Object.keys(catTotals)
-                .filter((cat) => catTotals[cat] > 0)
-                .map((cat) => ({
-                  name: cat,
-                  population: catTotals[cat],
-                  color: CATEGORY_COLORS[cat] || '#64748b',
-                  legendFontColor: '#475569',
-                  legendFontSize: 12,
-                }));
-
-              await AsyncStorage.setItem(DASHBOARD_STORAGE_KEY, JSON.stringify(data));
-              setTransactions(data.recentActivity);
-              calculateWeeklyTrend(data.recentActivity);
-            } catch (err) {
-              console.error(err);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // Filtered transactions
+  // Filter transactions by search query and selected category pill
   const filteredTransactions = transactions.filter((tx) => {
     const matchesSearch = tx.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory =
@@ -173,18 +128,18 @@ export default function HistoryScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 110 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header Section */}
+        {/* Header Summary */}
         <View className="items-center mb-4">
           <Text className="text-base font-bold text-[#4143d5]">History</Text>
           <Text className="text-3xl font-extrabold text-[#0f172a] my-1">
             Rs {weeklyTotal.toLocaleString()}
           </Text>
           <Text className="text-xs text-[#64748b]">
-            Spent in this week · {weeklyCount} transactions
+            All expenses · {weeklyCount} transactions
           </Text>
         </View>
 
-        {/* Weekly Spending Trend Chart */}
+        {/* Weekly Spending Trend Line Chart */}
         <View className="bg-white rounded-3xl p-4 shadow-sm border border-[#f1f5f9] mb-4">
           <Text className="text-xs font-bold text-[#0f172a] mb-2 px-1">
             Weekly Spending Trend
@@ -192,7 +147,7 @@ export default function HistoryScreen() {
           <LineChart
             data={{
               labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-              datasets: [{ data: weeklyData }],
+              datasets: [{ data: weeklyData.every(d => d === 0) ? [0, 0, 0, 0, 0, 0, 1] : weeklyData }],
             }}
             width={screenWidth - 64}
             height={160}
@@ -235,7 +190,7 @@ export default function HistoryScreen() {
           )}
         </View>
 
-        {/* Category Pills */}
+        {/* Category Filter Pills */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -266,7 +221,7 @@ export default function HistoryScreen() {
           })}
         </ScrollView>
 
-        {/* Transaction Items */}
+        {/* Transaction List */}
         {filteredTransactions.length === 0 ? (
           <View className="bg-white rounded-3xl p-8 items-center justify-center border border-[#f1f5f9] shadow-xs">
             <View className="w-12 h-12 rounded-2xl bg-[#ede9fe] items-center justify-center mb-2">
@@ -274,7 +229,7 @@ export default function HistoryScreen() {
             </View>
             <Text className="text-xs font-bold text-[#0f172a] mt-1">No Transactions Found</Text>
             <Text className="text-[11px] text-[#94a3b8] mt-0.5">
-              Logged transactions will show up here.
+              Logged expenses will appear here.
             </Text>
           </View>
         ) : (
@@ -283,9 +238,17 @@ export default function HistoryScreen() {
               key={item.id}
               className="flex-row justify-between items-center bg-white p-3.5 rounded-2xl mb-2.5 border border-[#f1f5f9] shadow-xs"
             >
+              {/* Left: icon + title + subtitle */}
               <View className="flex-row items-center flex-1">
-                <View className="w-10 h-10 rounded-2xl bg-[#f1f5f9] items-center justify-center mr-3">
-                  <Ionicons name={item.icon || 'receipt'} size={18} color="#4143d5" />
+                <View
+                  style={{ backgroundColor: `${CATEGORY_COLORS[item.category] || '#64748b'}15` }}
+                  className="w-10 h-10 rounded-2xl items-center justify-center mr-3"
+                >
+                  <Ionicons
+                    name={item.icon || 'receipt'}
+                    size={18}
+                    color={CATEGORY_COLORS[item.category] || '#64748b'}
+                  />
                 </View>
                 <View className="flex-1 pr-2">
                   <Text className="text-xs font-semibold text-[#0f172a]" numberOfLines={1}>
@@ -295,22 +258,10 @@ export default function HistoryScreen() {
                 </View>
               </View>
 
-              <View className="flex-row items-center gap-3">
-                <Text
-                  className={`text-xs font-bold ${
-                    item.amount < 0 ? 'text-[#ef4444]' : 'text-[#16a34a]'
-                  }`}
-                >
-                  {item.amount < 0 ? `- Rs ${Math.abs(item.amount)}` : `+ Rs ${item.amount}`}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => handleDeleteTransaction(item.id)}
-                  activeOpacity={0.7}
-                  className="w-7 h-7 rounded-full bg-red-50 items-center justify-center border border-red-100"
-                >
-                  <Ionicons name="trash-outline" size={14} color="#ef4444" />
-                </TouchableOpacity>
-              </View>
+              {/* Right: amount */}
+              <Text className="text-xs font-bold text-[#ef4444]">
+                - Rs {Math.abs(item.amount)}
+              </Text>
             </View>
           ))
         )}

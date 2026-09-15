@@ -70,16 +70,20 @@ export default function LoginScreen() {
 
       // 5. Check if HTTP Status Code is 200 (Success)
       if (response.status === 200) {
-        // Prepare user session object with real JWT token and User details from DB
+        // Prepare user session object with JWT token and full user details from DB
+        // We store firstName/lastName so Settings screen can display the user's name
         const userSession = {
-          token: data.token,
+          token: data.token,                                   // JWT used for every API call
+          id: data.user.id,                                    // MongoDB _id of the user
           email: data.user.email,
-          name: data.user.name,
+          name: data.user.name || `${data.user.firstName} ${data.user.lastName}`,
+          firstName: data.user.firstName,
+          lastName: data.user.lastName,
           rememberMe: rememberMe,
           loggedInAt: new Date().toISOString(),
         };
 
-        // Save session data to phone storage
+        // Persist session to phone storage — persists across app restarts
         await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(userSession));
 
         // Navigate to dashboard/tabs screen

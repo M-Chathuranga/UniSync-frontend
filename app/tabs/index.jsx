@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PieChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { api } from '../../services/api';
 import {
   useAudioRecorder,
   AudioModule,
@@ -30,7 +31,6 @@ import * as FileSystem from 'expo-file-system/legacy';
 const screenWidth = Dimensions.get('window').width;
 
 // Storage keys
-const DASHBOARD_STORAGE_KEY = '@smart_finance_dashboard_data_v3';
 const AUTH_USER_KEY = '@smart_finance_auth_user';
 
 // Groq Whisper API Key
@@ -51,6 +51,8 @@ const initialFinanceState = {
   income: 0,
   expenses: 0,
   balance: 0,
+  safeDailyLimit: 0,
+  isOverBudget: false,
   chartData: [],
   breakdown: [
     { label: 'Food', percent: 0, color: '#4143d5' },
@@ -102,117 +104,81 @@ export default function DashboardScreen() {
     }
   };
 
-  // Load financial state from AsyncStorage
+  // Load financial state from API
   const loadFinanceData = async () => {
     try {
-      const saved = await AsyncStorage.getItem(DASHBOARD_STORAGE_KEY);
-      if (saved) {
-        setFinanceData(JSON.parse(saved));
-      } else {
-        setFinanceData(initialFinanceState);
-      }
-    } catch (e) {
-      console.error('Error loading finance data', e);
-    }
-  };
+      const [dashRes, expRes, catSummaryRes] = await Promise.all([
+        api.getDashboard(),
+        api.getExpenses(),
+        api.getCategorySummary()
+      ]);
 
-  // Save financial state to AsyncStorage
-  const saveFinanceData = async (newData) => {
-    try {
-      setFinanceData(newData);
-      await AsyncStorage.setItem(DASHBOARD_STORAGE_KEY, JSON.stringify(newData));
+      const totalCategorySpent = catSummaryRes.data.reduce((sum, c) => sum + c.totalAmount, 0);
+
+      const getIconForCategory = (cat) => {
+        if (cat === 'Food') return 'restaurant';
+        if (cat === 'Transport') return 'bus';
+        if (cat === 'Boarding') return 'home';
+        if (cat === 'Study') return 'book';
+        if (cat === 'Medical') return 'pricetag';
+        return 'receipt';
+      };
+
+      setFinanceData({
+        income: dashRes.monthlyAllowance || 0,
+        expenses: dashRes.totalSpentToday || 0,
+        balance: dashRes.remainingDailyBalance || 0,
+        safeDailyLimit: dashRes.safeDailyLimit || 0,
+        isOverBudget: dashRes.isOverBudget || false,
+        chartData: catSummaryRes.data.map(c => ({
+          name: c.category,
+          population: c.totalAmount,
+          color: CATEGORY_COLORS[c.category] || '#64748b',
+          legendFontColor: '#475569',
+          legendFontSize: 12,
+        })),
+        breakdown: catSummaryRes.data.map(c => ({
+          label: c.category,
+          percent: totalCategorySpent > 0 ? Math.round((c.totalAmount / totalCategorySpent) * 100) : 0,
+          color: CATEGORY_COLORS[c.category] || '#64748b'
+        })),
+        recentActivity: expRes.slice(0, 10).map(tx => ({
+          id: tx._id,
+          title: tx.title,
+          sub: `${tx.category} · ${new Date(tx.date).toLocaleDateString()}`,
+          amount: -tx.amount, 
+          category: tx.category,
+          icon: getIconForCategory(tx.category)
+        }))
+      });
     } catch (e) {
-      console.error('Error saving finance data', e);
+      console.error('Error loading finance data from API:', e);
     }
   };
 
   // Reset all dashboard data to Rs 0
   const handleResetAllData = () => {
-    Alert.alert(
-      'Reset All Data',
-      'Are you sure you want to clear all transactions, expenses, and the Pie Chart to Rs 0?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset to Rs 0',
-          style: 'destructive',
-          onPress: async () => {
-            await saveFinanceData(initialFinanceState);
-          },
-        },
-      ]
-    );
+    Alert.alert('Info', 'Resetting data is handled via the Settings tab or backend directly.');
   };
 
   // Calculate safe to spend limit per day
-  const safeToSpend = Math.max(0, Math.round(financeData.balance / dateInfo.daysLeft));
+  const safeToSpend = financeData.safeDailyLimit || 0;
 
   // Add new transaction and recompute analytics
-  const handleAddNewTransaction = (newTx) => {
-    let updatedExpenses = financeData.expenses;
-    let updatedIncome = financeData.income;
-    let updatedBalance = financeData.balance;
-
-    if (newTx.type === 'income') {
-      updatedIncome += newTx.amount;
-      updatedBalance += newTx.amount;
-    } else {
-      updatedExpenses += newTx.amount;
-      updatedBalance -= newTx.amount;
+  const handleAddNewTransaction = async (newTx) => {
+    try {
+      if (newTx.type === 'expense') {
+        await api.addExpense({
+          title: newTx.title,
+          amount: newTx.amount,
+          category: newTx.category
+        });
+      }
+      loadFinanceData();
+    } catch (e) {
+      console.error('Error adding transaction', e);
+      Alert.alert('Error', 'Failed to save transaction to server');
     }
-
-    const updatedActivity = [
-      {
-        id: Date.now().toString(),
-        title: newTx.title,
-        sub: `${newTx.category} · Just now`,
-        amount: newTx.type === 'income' ? newTx.amount : -newTx.amount,
-        category: newTx.category,
-        icon: newTx.icon,
-      },
-      ...financeData.recentActivity,
-    ];
-
-    const expenseActivities = updatedActivity.filter((tx) => tx.amount < 0);
-    const totalExp = expenseActivities.reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
-
-    let updatedBreakdown = initialFinanceState.breakdown;
-    let updatedChartData = [];
-
-    if (totalExp > 0) {
-      const catTotals = { Food: 0, Boarding: 0, Transport: 0, Study: 0, Other: 0 };
-      expenseActivities.forEach((tx) => {
-        const cat = tx.category || 'Other';
-        catTotals[cat] = (catTotals[cat] || 0) + Math.abs(tx.amount);
-      });
-
-      updatedBreakdown = Object.keys(catTotals).map((cat) => ({
-        label: cat,
-        percent: Math.round((catTotals[cat] / totalExp) * 100),
-        color: CATEGORY_COLORS[cat] || '#64748b',
-      }));
-
-      updatedChartData = Object.keys(catTotals)
-        .filter((cat) => catTotals[cat] > 0)
-        .map((cat) => ({
-          name: cat,
-          population: catTotals[cat],
-          color: CATEGORY_COLORS[cat] || '#64748b',
-          legendFontColor: '#475569',
-          legendFontSize: 12,
-        }));
-    }
-
-    const updatedData = {
-      income: updatedIncome,
-      expenses: updatedExpenses,
-      balance: updatedBalance,
-      chartData: updatedChartData,
-      breakdown: updatedBreakdown,
-      recentActivity: updatedActivity,
-    };
-
-    saveFinanceData(updatedData);
   };
 
   const chartConfig = {
@@ -259,7 +225,7 @@ export default function DashboardScreen() {
 
         {/* User Greeting */}
         <Text className="text-2xl font-bold text-[#0f172a]">
-          Hello, {userProfile.name} 👋
+          Hello, {userProfile.firstName} 👋
         </Text>
         <Text className="text-xs text-[#64748b] mt-0.5 mb-4">{dateInfo.dateStr}</Text>
 
@@ -414,7 +380,7 @@ export default function DashboardScreen() {
       <InternalVoiceModal
         visible={showVoiceModal}
         onClose={() => setShowVoiceModal(false)}
-        onAddExpense={(exp) => handleAddNewTransaction({ ...exp, type: 'expense' })}
+        onAddExpense={() => loadFinanceData()} // Just refresh dashboard data after voice save
       />
 
       <ManualAddModal
@@ -786,10 +752,17 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (detectedExpense) {
-      onAddExpense(detectedExpense);
-      onClose();
+      try {
+        // Send transcribed text to backend — it parses amount, title, and category
+        await api.addVoiceExpense(spokenText);
+        // Trigger parent dashboard to reload data from API
+        onAddExpense();
+        onClose();
+      } catch (e) {
+        Alert.alert('Error', 'Backend failed to save voice expense. Check voice logging settings.');
+      }
     }
   };
 

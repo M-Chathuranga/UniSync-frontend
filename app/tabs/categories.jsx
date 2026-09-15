@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,86 +6,98 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
+import { api } from '../../services/api';
 
-const DASHBOARD_STORAGE_KEY = '@smart_finance_dashboard_data_v3';
-
-const INITIAL_CATEGORIES = [
-  { id: '1', name: 'Food', spent: 0, budget: 15000, icon: 'restaurant', color: '#4143d5' },
-  { id: '2', name: 'Boarding', spent: 0, budget: 10000, icon: 'home', color: '#10b981' },
-  { id: '3', name: 'Transport', spent: 0, budget: 5000, icon: 'bus', color: '#ef4444' },
-  { id: '4', name: 'Study', spent: 0, budget: 4000, icon: 'book', color: '#a855f7' },
-  { id: '5', name: 'Other', spent: 0, budget: 3000, icon: 'receipt', color: '#64748b' },
-  { id: '6', name: 'Medical', spent: 0, budget: 2500, icon: 'pricetag', color: '#ec4899' },
+// Static category budget limits (per month) — can be made editable in future
+const INITIAL_CATEGORY_CONFIG = [
+  { name: 'Food',      icon: 'restaurant', color: '#4143d5', budget: 15000 },
+  { name: 'Boarding',  icon: 'home',       color: '#10b981', budget: 10000 },
+  { name: 'Transport', icon: 'bus',        color: '#ef4444', budget: 5000  },
+  { name: 'Study',     icon: 'book',       color: '#a855f7', budget: 4000  },
+  { name: 'Other',     icon: 'receipt',    color: '#64748b', budget: 3000  },
+  { name: 'Medical',   icon: 'pricetag',   color: '#ec4899', budget: 2500  },
 ];
 
 export default function CategoriesScreen() {
-  const [categories, setCategories] = useState(INITIAL_CATEGORIES);
+  const [categories, setCategories] = useState([]); // Combined list with actual spend
   const [modalVisible, setModalVisible] = useState(false);
   const [newName, setNewName] = useState('');
   const [newBudget, setNewBudget] = useState('');
 
-  // Categories Tab එක ඔබන සෑම අවස්ථාවකදීම Dashboard දත්ත Live කියවීම
+  // Refresh category data every time this tab receives focus
   useFocusEffect(
-    React.useCallback(() => {
-      loadCategoryExpenses();
+    useCallback(() => {
+      loadCategoryData();
     }, [])
   );
 
-  const loadCategoryExpenses = async () => {
+  // Fetch category spend summary from backend and merge with local budget config
+  const loadCategoryData = async () => {
     try {
-      const saved = await AsyncStorage.getItem(DASHBOARD_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const activities = parsed.recentActivity || [];
+      // GET /expenses/summary/category — returns [ { category, totalAmount } ]
+      const summaryRes = await api.getCategorySummary();
+      const spendMap = {};
+      summaryRes.data.forEach((entry) => {
+        spendMap[entry.category] = entry.totalAmount; // Map category name → total spent
+      });
 
-        // Category අනුව වියදම් එකතුව (case-insensitive) ගණනය කිරීම
-        const totals = {};
-        activities.forEach((item) => {
-          if (item.amount < 0) {
-            const catName = (item.category || 'Other').toLowerCase();
-            totals[catName] = (totals[catName] || 0) + Math.abs(item.amount);
-          }
-        });
+      // Merge the server spend totals into the local category config list
+      const merged = INITIAL_CATEGORY_CONFIG.map((cat) => ({
+        id: cat.name,
+        name: cat.name,
+        icon: cat.icon,
+        color: cat.color,
+        budget: cat.budget,
+        spent: spendMap[cat.name] || 0, // Fall back to 0 if no expenses yet
+      }));
 
-        // Categories list එකේ spent අගයන් update කිරීම
-        setCategories((prev) =>
-          prev.map((c) => ({
-            ...c,
-            spent: totals[c.name.toLowerCase()] || 0,
-          }))
-        );
-      }
+      // Also fetch any user-created categories from GET /categories
+      const customCats = await api.getCategories();
+      const customMapped = customCats
+        .filter((c) => !INITIAL_CATEGORY_CONFIG.some((init) => init.name === c.name)) // Skip duplicates
+        .map((c) => ({
+          id: c._id,
+          name: c.name,
+          icon: c.icon || 'pricetag',
+          color: '#4143d5',
+          budget: 0,
+          spent: spendMap[c.name] || 0,
+        }));
+
+      setCategories([...merged, ...customMapped]);
     } catch (e) {
-      console.error(e);
+      console.error('Error loading category data:', e);
     }
   };
 
+  // Compute totals for the summary card
   const totalSpent = categories.reduce((sum, item) => sum + item.spent, 0);
   const totalBudget = categories.reduce((sum, item) => sum + item.budget, 0);
   const overallPercentage =
     totalBudget > 0 ? Math.min(Math.round((totalSpent / totalBudget) * 100), 100) : 0;
 
-  const handleAddCategory = () => {
-    if (!newName.trim() || !newBudget.trim()) return;
+  // Add a new custom category to the backend and reload
+  const handleAddCategory = async () => {
+    if (!newName.trim()) {
+      Alert.alert('Required', 'Please enter a category name.');
+      return;
+    }
 
-    const newCategory = {
-      id: Date.now().toString(),
-      name: newName.trim(),
-      spent: 0,
-      budget: parseFloat(newBudget) || 0,
-      icon: 'pricetag',
-      color: '#4143d5',
-    };
-
-    setCategories([...categories, newCategory]);
-    setNewName('');
-    setNewBudget('');
-    setModalVisible(false);
+    try {
+      // POST /categories — saves to DB under req.user.id
+      await api.addCategory({ name: newName.trim(), icon: 'pricetag' });
+      setNewName('');
+      setNewBudget('');
+      setModalVisible(false);
+      loadCategoryData(); // Refresh list from backend
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to add category');
+    }
   };
 
   return (
@@ -94,6 +106,7 @@ export default function CategoriesScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 110 }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <View className="flex-row items-center justify-between mb-4">
           <Text className="text-xl font-bold text-[#0f172a]">Categories</Text>
           <TouchableOpacity
@@ -104,7 +117,7 @@ export default function CategoriesScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Total Budget Card */}
+        {/* Total Budget Summary Card */}
         <View className="bg-white rounded-3xl p-5 shadow-sm border border-[#f1f5f9] mb-5">
           <Text className="text-xs font-bold text-[#64748b] uppercase tracking-wider mb-1">
             Monthly Category Budget
@@ -117,7 +130,6 @@ export default function CategoriesScreen() {
               of Rs {totalBudget.toLocaleString()} limit
             </Text>
           </View>
-
           <View className="h-2.5 bg-[#f1f5f9] rounded-full overflow-hidden mb-2">
             <View
               style={{ width: `${overallPercentage}%` }}
@@ -133,10 +145,11 @@ export default function CategoriesScreen() {
           Active Allocations
         </Text>
 
+        {/* Category Cards — real spend from backend, budget from config */}
         {categories.map((cat) => {
           const percent =
             cat.budget > 0 ? Math.min(Math.round((cat.spent / cat.budget) * 100), 100) : 0;
-          const isOver = cat.spent > cat.budget;
+          const isOver = cat.budget > 0 && cat.spent > cat.budget;
 
           return (
             <View
@@ -154,39 +167,37 @@ export default function CategoriesScreen() {
                   <View>
                     <Text className="text-xs font-bold text-[#0f172a]">{cat.name}</Text>
                     <Text className="text-[11px] text-[#64748b] mt-0.5">
-                      Limit: Rs {cat.budget.toLocaleString()}
+                      {cat.budget > 0 ? `Limit: Rs ${cat.budget.toLocaleString()}` : 'No budget set'}
                     </Text>
                   </View>
                 </View>
                 <View className="items-end">
-                  <Text
-                    className={`text-xs font-bold ${
-                      isOver ? 'text-[#ef4444]' : 'text-[#0f172a]'
-                    }`}
-                  >
+                  {/* Highlight over-budget amount in red */}
+                  <Text className={`text-xs font-bold ${isOver ? 'text-[#ef4444]' : 'text-[#0f172a]'}`}>
                     Rs {cat.spent.toLocaleString()}
                   </Text>
-                  <Text className="text-[10px] font-semibold text-[#64748b] mt-0.5">
-                    {percent}%
-                  </Text>
+                  <Text className="text-[10px] font-semibold text-[#64748b] mt-0.5">{percent}%</Text>
                 </View>
               </View>
 
-              <View className="h-2 bg-[#f1f5f9] rounded-full overflow-hidden">
-                <View
-                  style={{
-                    width: `${percent}%`,
-                    backgroundColor: isOver ? '#ef4444' : cat.color,
-                  }}
-                  className="h-full rounded-full"
-                />
-              </View>
+              {/* Progress bar */}
+              {cat.budget > 0 && (
+                <View className="h-2 bg-[#f1f5f9] rounded-full overflow-hidden">
+                  <View
+                    style={{
+                      width: `${percent}%`,
+                      backgroundColor: isOver ? '#ef4444' : cat.color,
+                    }}
+                    className="h-full rounded-full"
+                  />
+                </View>
+              )}
             </View>
           );
         })}
       </ScrollView>
 
-      {/* Category Modal */}
+      {/* Add Category Modal */}
       <Modal
         visible={modalVisible}
         transparent
@@ -208,7 +219,7 @@ export default function CategoriesScreen() {
             />
 
             <Text className="text-xs font-semibold text-[#64748b] mb-1">
-              Monthly Budget (Rs)
+              Monthly Budget (Rs) — Optional
             </Text>
             <TextInput
               value={newBudget}
