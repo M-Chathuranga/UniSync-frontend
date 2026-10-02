@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  Image, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Image,
   ScrollView,
-  Alert 
+  Alert
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -68,45 +68,52 @@ export default function LoginScreen() {
       // 4. Parse the JSON response from Backend
       const data = await response.json();
 
+
+
       // 5. Check if HTTP Status Code is 200 (Success)
       if (response.status === 200) {
-        // Prepare user session object with JWT token and full user details from DB
-        // We store firstName/lastName so Settings screen can display the user's name
+
+        // The backend always returns: { message, token, user: { id, firstName, lastName, email } }
+        // Build the session object that gets stored in AsyncStorage and read by every screen
         const userSession = {
-          token: data.token,                                   // JWT used for every API call
-          id: data.user.id,                                    // MongoDB _id of the user
+          token: data.token,                                      // JWT sent in Authorization header for every API call
+          id: data.user.id,                                       // MongoDB _id — used for data isolation on backend
           email: data.user.email,
-          name: data.user.name || `${data.user.firstName} ${data.user.lastName}`,
           firstName: data.user.firstName,
           lastName: data.user.lastName,
+          name: `${data.user.firstName} ${data.user.lastName}`,  // Display name for Settings/Dashboard screens
           rememberMe: rememberMe,
           loggedInAt: new Date().toISOString(),
         };
 
-        // Persist session to phone storage — persists across app restarts
+        // Persist session to phone storage — survives app restarts
         await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(userSession));
 
-        // Navigate to dashboard/tabs screen
+        // Navigate to the main dashboard tab
         router.replace('/tabs');
+
       } else {
-        // Handle HTTP 400 or 401 response errors sent from controller
+        // Handle 400 / 401 / 404 error responses from the backend
         Alert.alert('Login Failed', data.message || 'Invalid email or password');
       }
-
     } catch (error) {
-      // Handle Network level errors (IP address mismatched, server offline, etc.)
-      console.error('Network Error:', error);
-      Alert.alert('Network Error', 'Unable to connect to the backend server. Check Wi-Fi & IP address.');
-      
-    }finally {
+
+      console.error('login process error:', error);
+
+      Alert.alert(
+        'Connection Error',
+        'Unable to connect to the server. Please check your internet connection and try again.'
+      );
+
+    } finally {
       setLoading(false);
     }
   };
-  
+
   return (
-    <ScrollView 
-      contentContainerStyle={{ flexGrow: 1 }} 
-      className="bg-indigo-100" 
+    <ScrollView
+      contentContainerStyle={{ flexGrow: 1 }}
+      className="bg-indigo-100"
       bounces={false}
     >
       <View className="flex-row items-center px-5 pt-12 pb-2">
@@ -163,24 +170,24 @@ export default function LoginScreen() {
                 secureTextEntry={!showPassword}
               />
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons 
-                  name={showPassword ? "eye-outline" : "eye-off-outline"} 
-                  size={22} 
-                  color="#6b7280" 
+                <Ionicons
+                  name={showPassword ? "eye-outline" : "eye-off-outline"}
+                  size={22}
+                  color="#6b7280"
                 />
               </TouchableOpacity>
             </View>
           </View>
 
           <View className="flex-row justify-between items-center my-3">
-            <TouchableOpacity 
-              className="flex-row items-center" 
+            <TouchableOpacity
+              className="flex-row items-center"
               onPress={() => setRememberMe(!rememberMe)}
             >
-              <Ionicons 
-                name={rememberMe ? "checkbox" : "square-outline"} 
-                size={22} 
-                color={rememberMe ? "#4f46e5" : "#9ca3af"} 
+              <Ionicons
+                name={rememberMe ? "checkbox" : "square-outline"}
+                size={22}
+                color={rememberMe ? "#4f46e5" : "#9ca3af"}
               />
               <Text className="text-sm text-gray-600 ml-2">Remember me</Text>
             </TouchableOpacity>
@@ -190,15 +197,15 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity 
-            className="bg-indigo-600 py-4 rounded-2xl items-center mt-6 shadow-md shadow-indigo-300" 
+          <TouchableOpacity
+            className="bg-indigo-600 py-4 rounded-2xl items-center mt-6 shadow-md shadow-indigo-300"
             onPress={handleLogin}
           >
             <Text className="text-white font-bold text-lg">Log In →</Text>
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => router.push('/signup')}>
           <Text className="text-sm text-gray-500">
             Don't have an account? <Text className="text-indigo-600 font-bold">Sign Up</Text>
