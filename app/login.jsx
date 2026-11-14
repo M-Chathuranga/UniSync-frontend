@@ -6,7 +6,9 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
-  Alert
+  Alert,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,7 +37,6 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    // 1. Basic validation - Check if fields are empty
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
@@ -50,10 +51,8 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      // 2. Define backend API URL from .env file
       const API_URL = `${process.env.EXPO_PUBLIC_API_URL}/auth/login`;
 
-      // 3. Send HTTP POST request to Express Backend
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
@@ -65,39 +64,28 @@ export default function LoginScreen() {
         }),
       });
 
-      // 4. Parse the JSON response from Backend
       const data = await response.json();
 
-
-
-      // 5. Check if HTTP Status Code is 200 (Success)
       if (response.status === 200) {
-
-        // The backend always returns: { message, token, user: { id, firstName, lastName, email } }
-        // Build the session object that gets stored in AsyncStorage and read by every screen
         const userSession = {
-          token: data.token,                                      // JWT sent in Authorization header for every API call
-          id: data.user.id,                                       // MongoDB _id — used for data isolation on backend
+          token: data.token,
+          id: data.user.id,
           email: data.user.email,
           firstName: data.user.firstName,
           lastName: data.user.lastName,
-          name: `${data.user.firstName} ${data.user.lastName}`,  // Display name for Settings/Dashboard screens
+          name: `${data.user.firstName} ${data.user.lastName}`,
           rememberMe: rememberMe,
           loggedInAt: new Date().toISOString(),
         };
 
-        // Persist session to phone storage — survives app restarts
         await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(userSession));
 
-        // Navigate to the main dashboard tab
         router.replace('/tabs');
 
       } else {
-        // Handle 400 / 401 / 404 error responses from the backend
         Alert.alert('Login Failed', data.message || 'Invalid email or password');
       }
     } catch (error) {
-
       console.error('login process error:', error);
 
       Alert.alert(
@@ -111,107 +99,113 @@ export default function LoginScreen() {
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={{ flexGrow: 1 }}
-      className="bg-indigo-100"
-      bounces={false}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1 }}
     >
-      <View className="flex-row items-center px-5 pt-12 pb-2">
-        <Text className="flex-1 text-center text-xl font-bold text-indigo-900 pr-7">
-          Smart Finance
-        </Text>
-      </View>
-
-      <View className="h-60 justify-center items-center px-4 pt-4 pb-2">
-        <Image
-          source={{ uri: 'https://img.freepik.com/free-vector/financial-growth-concept-illustration_114360-7853.jpg' }}
-          className="w-full h-full rounded-3xl"
-          resizeMode="cover"
-        />
-      </View>
-
-      <View className="flex-1 bg-white rounded-t-[32px] px-6 pt-10 pb-8 justify-between">
-        <View>
-          <View className="w-12 h-12 rounded-2xl bg-indigo-50 justify-center items-center mb-5">
-            <Ionicons name="shield-checkmark" size={26} color="#4f46e5" />
-          </View>
-
-          <Text className="text-4xl font-bold text-gray-900">Login</Text>
-          <Text className="text-sm text-gray-500 mt-1.5 mb-7">
-            Enter your email and password to log in
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        className="bg-indigo-100"
+        bounces={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View className="flex-row items-center px-5 pt-12 pb-2">
+          <Text className="flex-1 text-center text-xl font-bold text-indigo-900 pr-7">
+            Smart Finance
           </Text>
+        </View>
 
-          <View className="mb-5">
-            <Text className="text-lg font-semibold text-gray-700 mb-2">Email</Text>
-            <TextInput
-              className="bg-white border border-gray-200 rounded-2xl px-4 py-3.5 text-base text-gray-900"
-              placeholder="alex@example.com"
-              placeholderTextColor="#9ca3af"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
-              importantForAutofill="yes"
-            />
-          </View>
+        <View className="h-60 justify-center items-center px-4 pt-4 pb-2">
+          <Image
+            source={{ uri: 'https://img.freepik.com/free-vector/financial-growth-concept-illustration_114360-7853.jpg' }}
+            className="w-full h-full rounded-3xl"
+            resizeMode="cover"
+          />
+        </View>
 
-          <View className="mb-5">
-            <Text className="text-lg font-semibold text-gray-700 mb-2">Password</Text>
-            <View className="flex-row items-center border border-gray-200 rounded-2xl px-4 bg-white">
+        <View className="flex-1 bg-white rounded-t-[32px] px-6 pt-10 pb-8 justify-between">
+          <View>
+            <View className="w-12 h-12 rounded-2xl bg-indigo-50 justify-center items-center mb-5">
+              <Ionicons name="shield-checkmark" size={26} color="#4f46e5" />
+            </View>
+
+            <Text className="text-4xl font-bold text-gray-900">Login</Text>
+            <Text className="text-sm text-gray-500 mt-1.5 mb-7">
+              Enter your email and password to log in
+            </Text>
+
+            <View className="mb-5">
+              <Text className="text-lg font-semibold text-gray-700 mb-2">Email</Text>
               <TextInput
-                className="flex-1 py-3.5 text-base text-gray-900"
-                placeholder="••••••••"
+                className="bg-white border border-gray-200 rounded-2xl px-4 py-3.5 text-base text-gray-900"
+                placeholder="alex@example.com"
                 placeholderTextColor="#9ca3af"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
+                importantForAutofill="yes"
               />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons
-                  name={showPassword ? "eye-outline" : "eye-off-outline"}
-                  size={22}
-                  color="#6b7280"
+            </View>
+
+            <View className="mb-5">
+              <Text className="text-lg font-semibold text-gray-700 mb-2">Password</Text>
+              <View className="flex-row items-center border border-gray-200 rounded-2xl px-4 bg-white">
+                <TextInput
+                  className="flex-1 py-3.5 text-base text-gray-900"
+                  placeholder="••••••••"
+                  placeholderTextColor="#9ca3af"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
                 />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                  <Ionicons
+                    name={showPassword ? "eye-outline" : "eye-off-outline"}
+                    size={22}
+                    color="#6b7280"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View className="flex-row justify-between items-center my-3">
+              <TouchableOpacity
+                className="flex-row items-center"
+                onPress={() => setRememberMe(!rememberMe)}
+              >
+                <Ionicons
+                  name={rememberMe ? "checkbox" : "square-outline"}
+                  size={22}
+                  color={rememberMe ? "#4f46e5" : "#9ca3af"}
+                />
+                <Text className="text-sm text-gray-600 ml-2">Remember me</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity>
+                <Text className="text-sm text-indigo-600 font-semibold">Forgot Password?</Text>
               </TouchableOpacity>
             </View>
-          </View>
 
-          <View className="flex-row justify-between items-center my-3">
             <TouchableOpacity
-              className="flex-row items-center"
-              onPress={() => setRememberMe(!rememberMe)}
+              className="bg-indigo-600 py-4 rounded-2xl items-center mt-6 shadow-md shadow-indigo-300"
+              onPress={handleLogin}
             >
-              <Ionicons
-                name={rememberMe ? "checkbox" : "square-outline"}
-                size={22}
-                color={rememberMe ? "#4f46e5" : "#9ca3af"}
-              />
-              <Text className="text-sm text-gray-600 ml-2">Remember me</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity>
-              <Text className="text-sm text-indigo-600 font-semibold">Forgot Password?</Text>
+              <Text className="text-white font-bold text-lg">Log In →</Text>
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity
-            className="bg-indigo-600 py-4 rounded-2xl items-center mt-6 shadow-md shadow-indigo-300"
-            onPress={handleLogin}
-          >
-            <Text className="text-white font-bold text-lg">Log In →</Text>
+            onPress={() => router.push('/signup')}>
+            <Text className="text-sm text-gray-500">
+              Don't have an account? <Text className="text-indigo-600 font-bold">Sign Up</Text>
+            </Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          onPress={() => router.push('/signup')}>
-          <Text className="text-sm text-gray-500">
-            Don't have an account? <Text className="text-indigo-600 font-bold">Sign Up</Text>
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
