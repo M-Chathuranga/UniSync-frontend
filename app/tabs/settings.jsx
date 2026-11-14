@@ -166,7 +166,7 @@ export default function SettingsScreen() {
             <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
           </TouchableOpacity>
 
-          {/* Monthly Spending Limit — opens edit modal */}
+          {/* Monthly allowance — opens edit modal */}
           <TouchableOpacity
             onPress={() => {
               setNewAllowance(String(userProfile.monthlyAllowance));
@@ -179,7 +179,7 @@ export default function SettingsScreen() {
                 <Ionicons name="shield-checkmark-outline" size={18} color="#16a34a" />
               </View>
               <View>
-                <Text className="text-xs font-bold text-[#0f172a]">Monthly Spending Limit</Text>
+                <Text className="text-xs font-bold text-[#0f172a]">Monthly Allowance</Text>
                 <Text className="text-[11px] text-[#64748b]">
                   Rs {userProfile.monthlyAllowance.toLocaleString()}
                 </Text>

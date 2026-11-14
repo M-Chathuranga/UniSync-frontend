@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-//import Voice from '@react-native-voice/voice';
+// import Voice from '@react-native-voice/voice';
 import SafeToSpendCard from '../components/SafeToSpendCard';
 import VoiceListeningOverlay from '../components/VoiceListeningOverlay';
 
@@ -11,22 +11,22 @@ export default function AddExpenseScreen() {
   const [heardText, setHeardText] = useState('');
 
   useEffect(() => {
-    Voice.onSpeechResults = (e) => setHeardText(e.value?.[0] || '');
-    Voice.onSpeechError = () => setIsListening(false);
+    // Voice.onSpeechResults = (e) => setHeardText(e.value?.[0] || '');
+    // Voice.onSpeechError = () => setIsListening(false);
     return () => {
-      //Voice.destroy().then(Voice.removeAllListeners);
+      // Voice.destroy().then(Voice.removeAllListeners);
     };
   }, []);
 
   const startListening = async () => {
     setShowOverlay(true);
     setHeardText('');
-    await Voice.start('en-US');
+    // await Voice.start('en-US');
     setIsListening(true);
   };
 
   const stopListening = async () => {
-    await Voice.stop();
+    // await Voice.stop();
     setIsListening(false);
   };
 

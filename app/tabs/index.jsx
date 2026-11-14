@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PieChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '../../services/api';
 import {
   useAudioRecorder,
@@ -30,23 +30,23 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 const screenWidth = Dimensions.get('window').width;
 
-// Storage keys
 const AUTH_USER_KEY = '@smart_finance_auth_user';
-
-// Groq Whisper API Key
 const GROQ_API_KEY = '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';
 
-// Helper function to calculate current date details
+// Calculate current date details
 const getLiveDateInfo = () => {
   const now = new Date();
-  const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' });
+  const dateStr = now.toLocaleDateString('en-US', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+  });
   const monthStr = now.toLocaleDateString('en-US', { month: 'short' });
   const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysLeft = Math.max(1, totalDaysInMonth - now.getDate());
   return { dateStr, monthStr, daysLeft };
 };
 
-// Initial state values for finances
 const initialFinanceState = {
   income: 0,
   expenses: 0,
@@ -59,29 +59,51 @@ const initialFinanceState = {
     { label: 'Boarding', percent: 0, color: '#10b981' },
     { label: 'Transport', percent: 0, color: '#ef4444' },
     { label: 'Study', percent: 0, color: '#a855f7' },
+    { label: 'Medical', percent: 0, color: '#ec4899' },
     { label: 'Other', percent: 0, color: '#64748b' },
   ],
   recentActivity: [],
 };
 
-// Category colors mapping
 const CATEGORY_COLORS = {
   Food: '#4143d5',
   Boarding: '#10b981',
   Transport: '#ef4444',
   Study: '#a855f7',
+  Medical: '#ec4899',
   Other: '#64748b',
 };
 
+const ALL_CATEGORIES = [
+  { name: 'Food', icon: 'restaurant' },
+  { name: 'Transport', icon: 'bus' },
+  { name: 'Boarding', icon: 'home' },
+  { name: 'Study', icon: 'book' },
+  { name: 'Medical', icon: 'medkit' },
+  { name: 'Other', icon: 'receipt' },
+];
+
 export default function DashboardScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
 
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
+  const [editingTx, setEditingTx] = useState(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   const [dateInfo, setDateInfo] = useState(getLiveDateInfo());
   const [userProfile, setUserProfile] = useState({ name: 'User', email: '' });
   const [financeData, setFinanceData] = useState(initialFinanceState);
+
+  // Open Voice or Manual modal from bottom center FAB menu
+  useEffect(() => {
+    if (params?.action === 'voice') {
+      setShowVoiceModal(true);
+    } else if (params?.action === 'manual') {
+      setShowManualModal(true);
+    }
+  }, [params?.action, params?.t]);
 
   // Reload data when dashboard screen gains focus
   useFocusEffect(
@@ -104,13 +126,13 @@ export default function DashboardScreen() {
     }
   };
 
-  // Load financial state from API
+  // Load financial state from API and send budget alert to Notifications panel
   const loadFinanceData = async () => {
     try {
       const [dashRes, expRes, catSummaryRes] = await Promise.all([
         api.getDashboard(),
         api.getExpenses(),
-        api.getCategorySummary()
+        api.getCategorySummary(),
       ]);
 
       const totalCategorySpent = catSummaryRes.data.reduce((sum, c) => sum + c.totalAmount, 0);
@@ -120,7 +142,7 @@ export default function DashboardScreen() {
         if (cat === 'Transport') return 'bus';
         if (cat === 'Boarding') return 'home';
         if (cat === 'Study') return 'book';
-        if (cat === 'Medical') return 'pricetag';
+        if (cat === 'Medical') return 'medkit';
         return 'receipt';
       };
 
@@ -130,54 +152,122 @@ export default function DashboardScreen() {
         balance: dashRes.remainingDailyBalance || 0,
         safeDailyLimit: dashRes.safeDailyLimit || 0,
         isOverBudget: dashRes.isOverBudget || false,
-        chartData: catSummaryRes.data.map(c => ({
+        chartData: catSummaryRes.data.map((c) => ({
           name: c.category,
           population: c.totalAmount,
           color: CATEGORY_COLORS[c.category] || '#64748b',
           legendFontColor: '#475569',
           legendFontSize: 12,
         })),
-        breakdown: catSummaryRes.data.map(c => ({
+        breakdown: catSummaryRes.data.map((c) => ({
           label: c.category,
           percent: totalCategorySpent > 0 ? Math.round((c.totalAmount / totalCategorySpent) * 100) : 0,
-          color: CATEGORY_COLORS[c.category] || '#64748b'
+          color: CATEGORY_COLORS[c.category] || '#64748b',
         })),
-        recentActivity: expRes.slice(0, 10).map(tx => ({
+        recentActivity: expRes.slice(0, 10).map((tx) => ({
           id: tx._id,
           title: tx.title,
           sub: `${tx.category} · ${new Date(tx.date).toLocaleDateString()}`,
-          amount: -tx.amount, 
+          amount: -tx.amount,
           category: tx.category,
-          icon: getIconForCategory(tx.category)
-        }))
+          icon: getIconForCategory(tx.category),
+        })),
       });
+
     } catch (e) {
       console.error('Error loading finance data from API:', e);
     }
   };
 
-  // Reset all dashboard data to Rs 0
+  // Reset all expenses and budget data to Rs 0
   const handleResetAllData = () => {
-    Alert.alert('Info', 'Resetting data is handled via the Settings tab or backend directly.');
+    Alert.alert(
+      'Reset All Data',
+      'This will permanently delete all recorded expenses and reset your monthly allowance to Rs 0. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Everything',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsResetting(true);
+              const allExpenses = await api.getExpenses();
+
+              if (Array.isArray(allExpenses) && allExpenses.length > 0) {
+                await Promise.all(allExpenses.map((tx) => api.deleteExpense(tx._id)));
+              }
+
+              await api.updateSettings({ monthlyAllowance: 0 });
+              const todayKey = `@budget_alert_sent_${new Date().toDateString()}`;
+              await AsyncStorage.removeItem(todayKey);
+
+              setFinanceData(initialFinanceState);
+              await loadFinanceData();
+
+              Alert.alert('Reset Complete', 'All expenses and budget data have been reset to Rs 0.');
+            } catch (e) {
+              console.error('Error resetting data:', e);
+              Alert.alert('Error', 'Failed to reset all data. Please check your connection.');
+            } finally {
+              setIsResetting(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
-  // Calculate safe to spend limit per day
   const safeToSpend = financeData.safeDailyLimit || 0;
 
-  // Add new transaction and recompute analytics
+  // Add new transaction
   const handleAddNewTransaction = async (newTx) => {
     try {
       if (newTx.type === 'expense') {
         await api.addExpense({
           title: newTx.title,
           amount: newTx.amount,
-          category: newTx.category
+          category: newTx.category,
         });
       }
       loadFinanceData();
     } catch (e) {
       console.error('Error adding transaction', e);
       Alert.alert('Error', 'Failed to save transaction to server');
+    }
+  };
+
+  // Delete single transaction with confirmation
+  const handleDeleteTransaction = (id) => {
+    Alert.alert(
+      'Delete Expense',
+      'Are you sure you want to delete this expense?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteExpense(id);
+              loadFinanceData();
+            } catch (e) {
+              Alert.alert('Error', 'Failed to delete expense');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Save edited transaction
+  const handleUpdateTransaction = async (id, updatedData) => {
+    try {
+      await api.updateExpense(id, updatedData);
+      setEditingTx(null);
+      loadFinanceData();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to update expense');
     }
   };
 
@@ -197,18 +287,15 @@ export default function DashboardScreen() {
           <View className="flex-row items-center gap-2">
             <TouchableOpacity
               onPress={handleResetAllData}
+              disabled={isResetting}
               activeOpacity={0.8}
               className="w-8 h-8 rounded-full bg-red-50 items-center justify-center border border-red-200"
             >
-              <Ionicons name="refresh" size={16} color="#ef4444" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setShowManualModal(true)}
-              activeOpacity={0.8}
-              className="w-8 h-8 rounded-full bg-[#4143d5] items-center justify-center shadow-sm"
-            >
-              <Ionicons name="add" size={20} color="#ffffff" />
+              {isResetting ? (
+                <ActivityIndicator size="small" color="#ef4444" />
+              ) : (
+                <Ionicons name="refresh" size={16} color="#ef4444" />
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -225,7 +312,7 @@ export default function DashboardScreen() {
 
         {/* User Greeting */}
         <Text className="text-2xl font-bold text-[#0f172a]">
-          Hello, {userProfile.firstName} 👋
+          Hello, {userProfile.firstName || userProfile.name || 'Admin'} 👋
         </Text>
         <Text className="text-xs text-[#64748b] mt-0.5 mb-4">{dateInfo.dateStr}</Text>
 
@@ -236,7 +323,7 @@ export default function DashboardScreen() {
               SAFE TO SPEND TODAY
             </Text>
             <Text className="text-3xl font-extrabold text-[#15803d] my-1">
-              Rs {safeToSpend}.00
+              Rs {Number(safeToSpend).toFixed(2)}
             </Text>
             <Text className="text-xs font-medium text-[#16a34a]">
               • {dateInfo.daysLeft} days left in {dateInfo.monthStr}
@@ -283,7 +370,7 @@ export default function DashboardScreen() {
         {/* Breakdown Card */}
         <View className="bg-white rounded-3xl p-4 mb-4 shadow-sm border border-[#f1f5f9]">
           <Text className="text-sm font-bold text-[#0f172a] mb-2">Spending Breakdown</Text>
-          
+
           {financeData.expenses === 0 || !financeData.chartData || financeData.chartData.length === 0 ? (
             <View className="py-8 items-center justify-center">
               <Ionicons name="pie-chart-outline" size={44} color="#cbd5e1" />
@@ -325,7 +412,7 @@ export default function DashboardScreen() {
           )}
         </View>
 
-        {/* Recent Transactions List */}
+        {/* Recent Transactions List with Edit & Delete Buttons */}
         <View className="bg-white rounded-3xl p-4 shadow-sm border border-[#f1f5f9]">
           <View className="flex-row justify-between items-center mb-3">
             <Text className="text-sm font-bold text-[#0f172a]">Recent Activity</Text>
@@ -343,50 +430,78 @@ export default function DashboardScreen() {
             </View>
           ) : (
             financeData.recentActivity.map((item) => (
-              <View key={item.id} className="flex-row justify-between items-center py-2.5 border-b border-[#f8fafc] last:border-b-0">
-                <View className="flex-row items-center">
+              <View
+                key={item.id}
+                className="flex-row justify-between items-center py-2.5 border-b border-[#f8fafc] last:border-b-0"
+              >
+                <View className="flex-row items-center flex-1 mr-2">
                   <View className="w-10 h-10 rounded-2xl bg-[#f1f5f9] items-center justify-center mr-3">
                     <Ionicons name={item.icon || 'receipt'} size={18} color="#4143d5" />
                   </View>
-                  <View>
-                    <Text className="text-xs font-semibold text-[#0f172a]">{item.title}</Text>
+                  <View className="flex-1">
+                    <Text className="text-xs font-semibold text-[#0f172a]" numberOfLines={1}>
+                      {item.title}
+                    </Text>
                     <Text className="text-[11px] text-[#64748b] mt-0.5">{item.sub}</Text>
                   </View>
                 </View>
-                <Text className={`text-xs font-bold ${item.amount < 0 ? 'text-[#ef4444]' : 'text-[#16a34a]'}`}>
-                  {item.amount < 0 ? `- Rs ${Math.abs(item.amount)}` : `+ Rs ${item.amount}`}
-                </Text>
+
+                <View className="flex-row items-center gap-1.5">
+                  <Text
+                    className={`text-xs font-bold mr-1 ${
+                      item.amount < 0 ? 'text-[#ef4444]' : 'text-[#16a34a]'
+                    }`}
+                  >
+                    {item.amount < 0 ? `- Rs ${Math.abs(item.amount)}` : `+ Rs ${item.amount}`}
+                  </Text>
+
+                  {/* Edit Button */}
+                  <TouchableOpacity
+                    onPress={() =>
+                      setEditingTx({
+                        id: item.id,
+                        title: item.title,
+                        amount: Math.abs(item.amount).toString(),
+                        category: item.category,
+                      })
+                    }
+                    className="w-7 h-7 rounded-full bg-indigo-50 items-center justify-center"
+                  >
+                    <Ionicons name="pencil" size={14} color="#4143d5" />
+                  </TouchableOpacity>
+
+                  {/* Delete Button */}
+                  <TouchableOpacity
+                    onPress={() => handleDeleteTransaction(item.id)}
+                    className="w-7 h-7 rounded-full bg-red-50 items-center justify-center"
+                  >
+                    <Ionicons name="trash-outline" size={14} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
           )}
         </View>
       </ScrollView>
 
-      {/* Floating Center Voice Mic Button */}
-      <View className="absolute bottom-6 self-center items-center justify-center">
-        <View className="w-16 h-16 rounded-full bg-[#4143d5]/20 items-center justify-center">
-          <TouchableOpacity
-            activeOpacity={0.88}
-            onPress={() => setShowVoiceModal(true)}
-            className="rounded-full bg-[#4143d5] items-center justify-center border-2 border-white shadow-xl shadow-[#4143d5]/60"
-            style={{ elevation: 12, width: 54, height: 54 }}
-          >
-            <Ionicons name="mic" size={26} color="#ffffff" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {/* Modals */}
       <InternalVoiceModal
         visible={showVoiceModal}
         onClose={() => setShowVoiceModal(false)}
-        onAddExpense={() => loadFinanceData()} // Just refresh dashboard data after voice save
+        onAddExpense={() => loadFinanceData()}
       />
 
       <ManualAddModal
         visible={showManualModal}
         onClose={() => setShowManualModal(false)}
         onAddTransaction={handleAddNewTransaction}
+      />
+
+      <EditExpenseModal
+        visible={!!editingTx}
+        transaction={editingTx}
+        onClose={() => setEditingTx(null)}
+        onSave={handleUpdateTransaction}
       />
     </SafeAreaView>
   );
@@ -399,14 +514,6 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
   const [amount, setAmount] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Food');
 
-  const categories = [
-    { name: 'Food', icon: 'restaurant' },
-    { name: 'Transport', icon: 'bus' },
-    { name: 'Boarding', icon: 'home' },
-    { name: 'Study', icon: 'book' },
-    { name: 'Other', icon: 'receipt' },
-  ];
-
   const handleSave = () => {
     const parsedAmount = parseFloat(amount);
     if (!title.trim() || isNaN(parsedAmount) || parsedAmount <= 0) {
@@ -414,7 +521,7 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
       return;
     }
 
-    const catObj = categories.find((c) => c.name === selectedCategory) || { icon: 'receipt' };
+    const catObj = ALL_CATEGORIES.find((c) => c.name === selectedCategory) || { icon: 'receipt' };
 
     onAddTransaction({
       title: title.trim(),
@@ -440,9 +547,8 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
         <View className="bg-white rounded-t-[32px] px-6 pt-5 pb-9">
           <View className="w-12 h-1 bg-gray-300 rounded-full self-center mb-4" />
 
-          <Text className="text-lg font-bold text-[#0f172a]">Add Transaction</Text>
+          <Text className="text-lg font-bold text-[#0f172a] mb-3">Add Transaction</Text>
 
-          {/* Toggle Type */}
           <View className="flex-row bg-[#f1f5f9] p-1 rounded-2xl mb-4">
             <TouchableOpacity
               onPress={() => setType('expense')}
@@ -467,7 +573,6 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
             </TouchableOpacity>
           </View>
 
-          {/* Description Input */}
           <Text className="text-xs font-semibold text-[#64748b] mb-1">Title / Description</Text>
           <TextInput
             value={title}
@@ -477,7 +582,6 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
             className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-3"
           />
 
-          {/* Amount Input */}
           <Text className="text-xs font-semibold text-[#64748b] mb-1">Amount (Rs)</Text>
           <TextInput
             value={amount}
@@ -488,12 +592,11 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
             className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-4"
           />
 
-          {/* Categories Grid */}
           {type === 'expense' && (
             <>
               <Text className="text-xs font-semibold text-[#64748b] mb-2">Category</Text>
               <View className="flex-row flex-wrap gap-2 mb-5">
-                {categories.map((c) => {
+                {ALL_CATEGORIES.map((c) => {
                   const isSelected = selectedCategory === c.name;
                   return (
                     <TouchableOpacity
@@ -525,7 +628,6 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
             </>
           )}
 
-          {/* Actions */}
           <View className="flex-row gap-3 mt-2">
             <TouchableOpacity
               onPress={onClose}
@@ -547,7 +649,109 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
   );
 }
 
-// Voice Assistant Modal using expo-file-system/legacy and Groq Whisper
+// Edit Expense Modal Component
+function EditExpenseModal({ visible, transaction, onClose, onSave }) {
+  const [title, setTitle] = useState('');
+  const [amount, setAmount] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('Food');
+
+  useEffect(() => {
+    if (transaction) {
+      setTitle(transaction.title || '');
+      setAmount(transaction.amount ? String(transaction.amount) : '');
+      setSelectedCategory(transaction.category || 'Food');
+    }
+  }, [transaction]);
+
+  const handleUpdate = () => {
+    const parsedAmount = parseFloat(amount);
+    if (!title.trim() || isNaN(parsedAmount) || parsedAmount <= 0) {
+      Alert.alert('Invalid Input', 'Please enter a valid title and amount.');
+      return;
+    }
+    onSave(transaction.id, {
+      title: title.trim(),
+      amount: parsedAmount,
+      category: selectedCategory,
+    });
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1 bg-black/50 justify-end"
+      >
+        <View className="bg-white rounded-t-[32px] px-6 pt-5 pb-9">
+          <View className="w-12 h-1 bg-gray-300 rounded-full self-center mb-4" />
+          <Text className="text-lg font-bold text-[#0f172a] mb-3">Edit Expense</Text>
+
+          <Text className="text-xs font-semibold text-[#64748b] mb-1">Title / Description</Text>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Title"
+            placeholderTextColor="#94a3b8"
+            className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-3"
+          />
+
+          <Text className="text-xs font-semibold text-[#64748b] mb-1">Amount (Rs)</Text>
+          <TextInput
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="numeric"
+            placeholder="0.00"
+            placeholderTextColor="#94a3b8"
+            className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-4"
+          />
+
+          <Text className="text-xs font-semibold text-[#64748b] mb-2">Category</Text>
+          <View className="flex-row flex-wrap gap-2 mb-5">
+            {ALL_CATEGORIES.map((c) => {
+              const isSelected = selectedCategory === c.name;
+              return (
+                <TouchableOpacity
+                  key={c.name}
+                  onPress={() => setSelectedCategory(c.name)}
+                  className={`flex-row items-center px-3 py-1.5 rounded-full border ${
+                    isSelected ? 'bg-[#4143d5] border-[#4143d5]' : 'bg-[#f8fafc] border-gray-200'
+                  }`}
+                >
+                  <Ionicons
+                    name={c.icon}
+                    size={14}
+                    color={isSelected ? '#ffffff' : '#64748b'}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text className={`text-xs font-semibold ${isSelected ? 'text-white' : 'text-[#64748b]'}`}>
+                    {c.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View className="flex-row gap-3 mt-2">
+            <TouchableOpacity
+              onPress={onClose}
+              className="flex-1 bg-gray-100 py-3.5 rounded-xl items-center"
+            >
+              <Text className="text-xs font-bold text-[#64748b]">Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleUpdate}
+              className="flex-1 bg-[#4143d5] py-3.5 rounded-xl items-center shadow-md shadow-[#4143d5]/30"
+            >
+              <Text className="text-xs font-bold text-white">Update</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// Voice Assistant Modal with Multi-Language & Medical Category Support
 function InternalVoiceModal({ visible, onClose, onAddExpense }) {
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [isRecording, setIsRecording] = useState(false);
@@ -558,7 +762,6 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
   const pulseAnim1 = useRef(new Animated.Value(1)).current;
   const pulseAnim2 = useRef(new Animated.Value(1)).current;
 
-  // Pulse animation while listening
   useEffect(() => {
     if (isRecording) {
       Animated.loop(
@@ -599,7 +802,6 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
     }
   }, [isRecording]);
 
-  // Reset modal state on open
   useEffect(() => {
     if (visible) {
       setSpokenText('');
@@ -609,7 +811,6 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
     }
   }, [visible]);
 
-  // Start audio capture
   const startAudioRecording = async () => {
     try {
       const perm = await AudioModule.requestRecordingPermissionsAsync();
@@ -635,7 +836,6 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
     }
   };
 
-  // Stop recording and transcribe audio via native FileSystem upload
   const stopAudioRecordingAndTranscribe = async () => {
     try {
       setIsRecording(false);
@@ -650,12 +850,11 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
         return;
       }
 
-      // Ensure file scheme is prefixed properly for Android
-      const fileUri = rawUri.startsWith('file://') || rawUri.startsWith('content://')
-        ? rawUri
-        : `file://${rawUri}`;
+      const fileUri =
+        rawUri.startsWith('file://') || rawUri.startsWith('content://')
+          ? rawUri
+          : `file://${rawUri}`;
 
-      // Upload directly to Groq Whisper endpoint using legacy multipart upload
       const uploadResult = await FileSystem.uploadAsync(
         'https://api.groq.com/openai/v1/audio/transcriptions',
         fileUri,
@@ -666,8 +865,8 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
           mimeType: 'audio/m4a',
           parameters: {
             model: 'whisper-large-v3',
-            language: 'en',
-            prompt: 'Expense tracker: Rs, rupees, canteen, food, bus fare, lunch, tea, photocopy, boarding, rent',
+            prompt:
+              'Sri Lanka student expense tracker (English, Sinhala, Singlish): PickMe, Uber, tuk, bus fare, kottu, rice, tea, canteen, photocopy, print, boarding, bodima, rent, medical, medicine, pharmacy, doctor, hospital, Rs.',
           },
           headers: {
             Authorization: `Bearer ${GROQ_API_KEY.trim()}`,
@@ -685,15 +884,7 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
           Alert.alert('Recognition Failed', 'Could not detect speech in audio.');
         }
       } else {
-        let errorDetails = `HTTP ${uploadResult?.status}`;
-        try {
-          const parsed = JSON.parse(uploadResult?.body || '{}');
-          if (parsed?.error?.message) {
-            errorDetails = parsed.error.message;
-          }
-        } catch (e) {}
-        console.error('Groq API Error:', uploadResult?.status, uploadResult?.body);
-        Alert.alert('AI Speech Error', errorDetails);
+        Alert.alert('AI Speech Error', 'Could not transcribe audio. Please try again.');
       }
     } catch (err) {
       setIsProcessing(false);
@@ -710,39 +901,59 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
     }
   };
 
-  // Extract amount and category from transcription
+  // Parse amount and category from English, Sinhala, or Singlish text
   const parseExpense = (text) => {
     setSpokenText(text);
     const clean = text.toLowerCase();
 
-    // Regex to extract numeric amount
-    const match = clean.match(/(?:rs\.?|rupees)?\s*(\d+(?:\.\d{1,2})?)/i);
+    const numberRemovedCommas = clean.replace(/(\d),(\d)/g, '$1$2');
+    const match = numberRemovedCommas.match(/(?:rs\.?|rupees)?\s*(\d+(?:\.\d{1,2})?)/i);
     const amount = match ? parseFloat(match[1]) : 0;
 
     let category = 'Other';
     let icon = 'receipt';
 
-    // Keyword detection
-    if (/(lunch|canteen|food|tea|dinner|breakfast|snack|rice|coffee|kottu|meal|bread|roll|bun)/i.test(clean)) {
+    const foodRegex =
+      /(lunch|canteen|food|tea|dinner|breakfast|snack|rice|coffee|kottu|meal|bread|roll|bun|burger|pizza|shorteats|short eats|juice|milk|water|cake|biscuit|hopper|string hopper|parotta|roti|fried rice|biryani|noodles|bath|kema|kama|the|kiri|appa|indiappa|\u0db6\u0dad\u0dca|\u0d9a\u0dd1\u0db8|\u0dad\u0dda|\u0d9a\u0ddc\u0dad\u0dca\u0dad\u0dd4|\u0d86\u0db4\u0dca\u0db4|\u0dbb\u0ddc\u0da7\u0dd2|\u0d9a\u0dd0\u0db1\u0dca\u0da7\u0dd2\u0db1\u0dca|\u0d9a\u0dd2\u0dbb\u0dd2|\u0db6\u0dd2\u0dc3\u0dca\u0d9a\u0da7\u0dca|\u0db4\u0dcf\u0db1\u0dca|\u0db6\u0db1\u0dd2\u0dc3\u0dca)/i;
+
+    const transportRegex =
+      /(bus|transit|train|ticket|uber|pickme|pick me|pikme|fuel|petrol|diesel|van|ride|tuk|three wheel|threewheel|3wheel|wheel|auto|taxi|bike|fare|hire|sticket|\u0db6\u0dc3\u0dca|\u0d9a\u0ddd\u0da0\u0dca\u0da0\u0dd2|\u0daf\u0dd4\u0db8\u0dca\u0dbb\u0dd2\u0dba|\u0dad\u0dca\u200d\u0dbb\u0dd3\u0dc0\u0dd3\u0dbd\u0dca|\u0dc0\u0dd3\u0dbd\u0dca|\u0db4\u0dd2\u0d9a\u0dca\u0db8\u0dd3|\u0d8b\u0db6\u0dbb\u0dca|\u0db4\u0dd9\u0da7\u0dca\u200d\u0dbb\u0dbd\u0dca|\u0d9c\u0db8\u0db1\u0dca)/i;
+
+    const boardingRegex =
+      /(boarding|boardin|rent|room|hostel|bodim|bodima|boodima|electricity|water bill|bill|wifi|internet|data|reload|card|\u0db6\u0ddd\u0da9\u0dd2\u0db8|\u0db6\u0ddd\u0da9\u0dd2\u0d82|\u0d9a\u0dcf\u0db8\u0dbb|\u0d9a\u0dd4\u0dbd\u0dd3|\u0db6\u0dd2\u0dbd\u0dca|\u0dbb\u0dd3\u0dbd\u0ddd\u0da9\u0dca|\u0da9\u0dda\u0da7\u0dcf)/i;
+
+    const studyRegex =
+      /(book|study|photocopy|photo copy|pen|pencil|print|printout|exam|class|tuition|note|lecture|paper|file|stationery|uni|campus|course|\u0db4\u0ddc\u0dad\u0dca|\u0db4\u0ddc\u0dad|\u0db4\u0dd1\u0db1\u0dca|\u0dc6\u0ddc\u0da7\u0ddd\u0d9a\u0ddc\u0db4\u0dd2|\u0db4\u0dca\u200d\u0dbb\u0dd2\u0db1\u0dca\u0da7\u0dca|\u0db4\u0db1\u0dca\u0dad\u0dd2|\u0d9a\u0dd0\u0db8\u0dca\u0db4\u0dc3\u0dca|\u0db1\u0ddd\u0da7\u0dca)/i;
+
+    const medicalRegex =
+      /(medical|medicine|doctor|hospital|pharmacy|clinic|tablet|pill|checkup|dental|eye|health|beheth|dosthara|rohal|\u0db6\u0dd9\u0dc4\u0dd9\u0dad\u0dca|\u0daf\u0ddc\u0dc3\u0dca\u0dad\u0dbb|\u0dbb\u0ddd\u0dc4\u0dbd\u0dca|\u0dc6\u0dcf\u0db8\u0dc3\u0dd2|\u0db8\u0dd9\u0da9\u0dd2\u0d9a\u0dbd\u0dca)/i;
+
+    if (foodRegex.test(clean)) {
       category = 'Food';
       icon = 'restaurant';
-    } else if (/(bus|transit|train|ticket|uber|pickme|fuel|petrol|van|ride)/i.test(clean)) {
+    } else if (transportRegex.test(clean)) {
       category = 'Transport';
       icon = 'bus';
-    } else if (/(boarding|rent|room|hostel|bodim)/i.test(clean)) {
+    } else if (boardingRegex.test(clean)) {
       category = 'Boarding';
       icon = 'home';
-    } else if (/(book|study|photocopy|pen|print|exam|class|tuition|note)/i.test(clean)) {
+    } else if (studyRegex.test(clean)) {
       category = 'Study';
       icon = 'book';
-    } else if (/(doctor|medicine|pharmacy|hospital|tablet)/i.test(clean)) {
+    } else if (medicalRegex.test(clean)) {
       category = 'Medical';
-      icon = 'pricetag';
+      icon = 'medkit';
     }
+
+    const cleanTitle = text
+      .replace(/(\d),(\d)/g, '$1$2')
+      .replace(/(?:rs\.?|rupees)?\s*\d+(?:\.\d{1,2})?/gi, '')
+      .replace(/[-,.]/g, ' ')
+      .trim();
 
     if (amount > 0) {
       setDetectedExpense({
-        title: text.trim(),
+        title: cleanTitle.length > 1 ? cleanTitle : `${category} Expense`,
         amount: amount,
         category: category,
         icon: icon,
@@ -752,16 +963,28 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
     }
   };
 
+  const changeDetectedCategory = (catName, catIcon) => {
+    if (detectedExpense) {
+      setDetectedExpense({
+        ...detectedExpense,
+        category: catName,
+        icon: catIcon,
+      });
+    }
+  };
+
   const handleSave = async () => {
     if (detectedExpense) {
       try {
-        // Send transcribed text to backend — it parses amount, title, and category
-        await api.addVoiceExpense(spokenText);
-        // Trigger parent dashboard to reload data from API
+        await api.addExpense({
+          title: detectedExpense.title,
+          amount: detectedExpense.amount,
+          category: detectedExpense.category,
+        });
         onAddExpense();
         onClose();
       } catch (e) {
-        Alert.alert('Error', 'Backend failed to save voice expense. Check voice logging settings.');
+        Alert.alert('Error', 'Backend failed to save expense.');
       }
     }
   };
@@ -775,30 +998,33 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
           <Text className="text-xl font-extrabold text-[#0f172a]">AI Voice Assistant</Text>
           <Text className="text-xs text-[#64748b] mt-1 mb-3 text-center">
             {isRecording
-              ? 'Listening... Tap mic to stop'
+              ? 'Listening (English / Sinhala)... Tap to stop'
               : isProcessing
               ? 'Transcribing with Groq AI...'
-              : 'Tap mic button to speak your expense'}
+              : 'Speak in English, Sinhala or Singlish'}
           </Text>
 
-          {/* Voice Input Field (Keyboard Mic Support) */}
           <View className="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl px-4 py-2.5 my-2 flex-row items-center">
             <Ionicons name="mic-circle" size={26} color="#4143d5" />
             <TextInput
-              placeholder="e.g. Bus fare 120 or Rice 450"
+              placeholder="e.g. PickMe 350, Medical 2000, Bus 120"
               placeholderTextColor="#94a3b8"
               value={spokenText}
               onChangeText={(text) => parseExpense(text)}
               className="flex-1 ml-2 text-xs text-[#0f172a]"
             />
             {spokenText.length > 0 && (
-              <TouchableOpacity onPress={() => { setSpokenText(''); setDetectedExpense(null); }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setSpokenText('');
+                  setDetectedExpense(null);
+                }}
+              >
                 <Ionicons name="close-circle" size={18} color="#94a3b8" />
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Center Mic Recording Button */}
           <View className="items-center justify-center my-3 h-28 w-28">
             <Animated.View
               style={{
@@ -831,30 +1057,51 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
             </TouchableOpacity>
           </View>
 
-          {/* Detected Expense Card */}
           {detectedExpense && (
-            <View className="w-full bg-[#ecfdf5] border border-[#a7f3d0] rounded-2xl p-4 my-2 flex-row justify-between items-center">
-              <View className="flex-row items-center flex-1">
-                <View className="w-10 h-10 rounded-xl bg-[#d1fae5] items-center justify-center mr-3">
-                  <Ionicons name={detectedExpense.icon} size={20} color="#059669" />
+            <View className="w-full my-1">
+              <View className="w-full bg-[#ecfdf5] border border-[#a7f3d0] rounded-2xl p-4 flex-row justify-between items-center">
+                <View className="flex-row items-center flex-1">
+                  <View className="w-10 h-10 rounded-xl bg-[#d1fae5] items-center justify-center mr-3">
+                    <Ionicons name={detectedExpense.icon} size={20} color="#059669" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-xs font-bold text-[#065f46]">{detectedExpense.category}</Text>
+                    <Text className="text-[11px] text-gray-500" numberOfLines={1}>
+                      {detectedExpense.title}
+                    </Text>
+                  </View>
                 </View>
-                <View className="flex-1">
-                  <Text className="text-xs font-bold text-[#065f46]">{detectedExpense.category}</Text>
-                  <Text className="text-[11px] text-gray-500" numberOfLines={1}>{detectedExpense.title}</Text>
-                </View>
+                <Text className="text-base font-extrabold text-[#047857]">
+                  - Rs {detectedExpense.amount.toLocaleString()}
+                </Text>
               </View>
-              <Text className="text-base font-extrabold text-[#047857]">
-                - Rs {detectedExpense.amount}
-              </Text>
+
+              <View className="flex-row flex-wrap gap-1.5 mt-2 justify-center">
+                {ALL_CATEGORIES.map((c) => {
+                  const active = detectedExpense.category === c.name;
+                  return (
+                    <TouchableOpacity
+                      key={c.name}
+                      onPress={() => changeDetectedCategory(c.name, c.icon)}
+                      className={`px-2.5 py-1 rounded-full border ${
+                        active ? 'bg-[#4143d5] border-[#4143d5]' : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <Text className={`text-[10px] font-bold ${active ? 'text-white' : 'text-gray-600'}`}>
+                        {c.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           )}
 
-          {/* Quick Examples */}
-          <Text className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-1 mb-2 self-start">
+          <Text className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-2 mb-2 self-start">
             Quick Examples:
           </Text>
           <View className="flex-row flex-wrap gap-2 mb-3 w-full">
-            {['Bus fare 60', 'Canteen tea 70', 'Photocopy 120', 'Hostel rent 8000'].map((sample) => (
+            {['PickMe 350', 'Medical 2000', 'Photocopy 120', 'Boarding 8000'].map((sample) => (
               <TouchableOpacity
                 key={sample}
                 onPress={() => parseExpense(sample)}
@@ -865,7 +1112,6 @@ function InternalVoiceModal({ visible, onClose, onAddExpense }) {
             ))}
           </View>
 
-          {/* Actions */}
           <View className="flex-row gap-3 w-full mt-1">
             <TouchableOpacity
               onPress={onClose}

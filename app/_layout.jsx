@@ -1,5 +1,13 @@
 import '../global.css';
+import { Text, TextInput } from 'react-native';
 import { Stack } from 'expo-router';
+
+// System font scaling සීමා කිරීම
+if (Text.defaultProps == null) Text.defaultProps = {};
+Text.defaultProps.maxFontSizeMultiplier = 1.15;
+
+if (TextInput.defaultProps == null) TextInput.defaultProps = {};
+TextInput.defaultProps.maxFontSizeMultiplier = 1.15;
 
 export default function RootLayout() {
   return (
