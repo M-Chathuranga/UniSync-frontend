@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 export default function SignUpScreen() {
   const router = useRouter();
 
-
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -24,6 +23,25 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
+
+  const getPasswordStrength = (pass) => {
+    if (!pass) return { label: '', color: 'bg-gray-200', width: 'w-0', textColor: 'text-gray-400' };
+    let score = 0;
+    if (pass.length >= 8) score++;
+    if (/[A-Z]/.test(pass) && /[a-z]/.test(pass)) score++;
+    if (/[0-9]/.test(pass)) score++;
+    if (/[^A-Za-z0-9]/.test(pass)) score++;
+
+    if (score <= 1) {
+      return { label: 'Password is weak', color: 'bg-red-500', width: 'w-1/3', textColor: 'text-red-500' };
+    }
+    if (score === 2 || score === 3) {
+      return { label: 'Password is medium', color: 'bg-yellow-500', width: 'w-2/3', textColor: 'text-yellow-600' };
+    }
+    return { label: 'Password is strong', color: 'bg-green-500', width: 'w-full', textColor: 'text-green-600' };
+  };
+
+  const strength = getPasswordStrength(password);
 
   const handleSignUp = async () => {
     if (!firstName || !lastName || !email || !password) {
@@ -146,7 +164,7 @@ export default function SignUpScreen() {
               />
             </View>
 
-            {/* Password Field with Eye Icon */}
+            {/* Password Field with Eye Icon & Strength Meter */}
             <View className="mb-4">
               <Text className="text-lg font-semibold text-gray-700 mb-2">Password</Text>
               <View className="flex-row items-center border border-gray-200 rounded-2xl px-4 bg-white">
@@ -166,6 +184,17 @@ export default function SignUpScreen() {
                   />
                 </TouchableOpacity>
               </View>
+
+              {password.length > 0 && (
+                <View className="mt-2.5 px-1">
+                  <View className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <View className={`h-full rounded-full ${strength.color} ${strength.width}`} />
+                  </View>
+                  <Text className={`text-xs font-medium mt-1.5 ${strength.textColor}`}>
+                    {strength.label}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Sign Up Button */}
