@@ -301,9 +301,9 @@ export default function DashboardScreen() {
             <TouchableOpacity
               onPress={() => router.push('/tabs/settings')}
               activeOpacity={0.8}
-              className="w-8 h-8 rounded-full bg-[#ede9fe] items-center justify-center border border-[#c7d2fe]"
+              className="w-12 h-12 rounded-full bg-[#ede9fe] items-center justify-center border border-[#c7d2fe]"
             >
-              <Text className="text-[#4143d5] font-bold text-xs">
+              <Text className="text-[#4143d5] font-bold text-lg">
                 {userProfile.name ? userProfile.name.charAt(0).toUpperCase() : 'U'}
               </Text>
             </TouchableOpacity>
