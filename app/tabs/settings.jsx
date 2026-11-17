@@ -9,7 +9,6 @@ import {
   TextInput,
   Modal,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +20,8 @@ const AUTH_USER_KEY = '@smart_finance_auth_user';
 const BIOMETRIC_ENABLED_KEY = '@smart_finance_biometric_enabled';
 const DASHBOARD_CACHE_KEY = '@smart_finance_dashboard_cache';
 const CUSTOM_BUDGETS_KEY = '@smart_finance_custom_category_budgets';
+const CURRENCY_STORAGE_KEY = '@smart_finance_currency';
+
 const CURRENCY_OPTIONS = [
   { code: 'LKR', label: 'Sri Lankan Rupee (LKR)', symbol: 'Rs' },
   { code: 'USD', label: 'US Dollar (USD)', symbol: '$' },
@@ -29,6 +30,7 @@ const CURRENCY_OPTIONS = [
   { code: 'INR', label: 'Indian Rupee (INR)', symbol: '₹' },
   { code: 'AUD', label: 'Australian Dollar (AUD)', symbol: 'A$' },
 ];
+
 export default function SettingsScreen() {
   const [biometricEnabled, setBiometricEnabled] = useState(true);
   const [dailyLimitAlerts, setDailyLimitAlerts] = useState(true);
@@ -85,12 +87,17 @@ export default function SettingsScreen() {
 
   // Load user profile & monthly allowance from local session/cache first, then sync with backend API
   const loadSettingsFromAPI = async () => {
-    const savedCurrencyRaw = await AsyncStorage.getItem('@smart_finance_currency');
-      if (savedCurrencyRaw) {
-        setSelectedCurrency(JSON.parse(savedCurrencyRaw));
-      }
     try {
-      // 1. Load fallback user info from local AsyncStorage session & dashboard cache
+      const savedCurrencyRaw = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
+      if (savedCurrencyRaw) {
+        const parsed = JSON.parse(savedCurrencyRaw);
+        if (parsed && parsed.code) {
+          setSelectedCurrency(parsed);
+        }
+      }
+    } catch (_) {}
+
+    try {
       const [storedSession, storedDashCache] = await Promise.all([
         AsyncStorage.getItem(AUTH_USER_KEY),
         AsyncStorage.getItem(DASHBOARD_CACHE_KEY),
@@ -124,7 +131,6 @@ export default function SettingsScreen() {
         }
       }
 
-      // 2. Fetch latest profile & allowance from backend API
       const res = await api.getSettings();
       const user = res?.data || res;
 
@@ -160,26 +166,21 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleSaveAllowance = async () => {
-    const CURRENCY_OPTIONS = [
-    { code: 'LKR', label: 'Sri Lankan Rupee (LKR)', symbol: 'Rs' },
-    { code: 'USD', label: 'US Dollar (USD)', symbol: '$' },
-    { code: 'EUR', label: 'Euro (EUR)', symbol: '€' },
-    { code: 'GBP', label: 'British Pound (GBP)', symbol: '£' },
-    { code: 'INR', label: 'Indian Rupee (INR)', symbol: '₹' },
-    { code: 'AUD', label: 'Australian Dollar (AUD)', symbol: 'A$' },
-  ];
-
   const handleSelectCurrency = async (currencyObj) => {
+    if (!currencyObj) return;
     setSelectedCurrency(currencyObj);
     setShowCurrencyModal(false);
     try {
-      await AsyncStorage.setItem('@smart_finance_currency', JSON.stringify(currencyObj));
-      await api.updateSettings({ currency: currencyObj.code });
+      await AsyncStorage.setItem(CURRENCY_STORAGE_KEY, JSON.stringify(currencyObj));
+      if (typeof api?.updateSettings === 'function') {
+        await api.updateSettings({ currency: currencyObj.code });
+      }
     } catch (e) {
-      console.warn('Currency saved locally; backend sync skipped:', e.message);
+      console.warn('Currency saved locally; backend sync skipped:', e?.message || e);
     }
   };
+
+  const handleSaveAllowance = async () => {
     const parsed = parseFloat(newAllowance);
     if (isNaN(parsed) || parsed < 0) {
       Alert.alert('Invalid', 'Please enter a valid positive number for monthly allowance.');
@@ -275,7 +276,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-       {/* Financial Preferences */}
+        {/* Financial Preferences */}
         <Text className="text-xs font-bold text-[#64748b] uppercase tracking-wider mb-2.5 px-1">
           FINANCIAL PREFERENCES
         </Text>
@@ -291,7 +292,9 @@ export default function SettingsScreen() {
               </View>
               <View>
                 <Text className="text-xs font-bold text-[#0f172a]">Currency</Text>
-                <Text className="text-[11px] text-[#64748b]">{selectedCurrency.label}</Text>
+                <Text className="text-[11px] text-[#64748b]">
+                  {selectedCurrency?.label || 'Sri Lankan Rupee (LKR)'}
+                </Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
@@ -299,7 +302,7 @@ export default function SettingsScreen() {
 
           <TouchableOpacity
             onPress={() => {
-              setNewAllowance(String(userProfile.monthlyAllowance));
+              setNewAllowance(String(userProfile.monthlyAllowance || 0));
               setShowBudgetModal(true);
             }}
             className="flex-row items-center justify-between py-3.5 border-b border-[#f8fafc]"
@@ -311,7 +314,7 @@ export default function SettingsScreen() {
               <View>
                 <Text className="text-xs font-bold text-[#0f172a]">Monthly Allowance</Text>
                 <Text className="text-[11px] text-[#64748b]">
-                  {selectedCurrency.symbol} {userProfile.monthlyAllowance.toLocaleString()}
+                  {selectedCurrency?.symbol || 'Rs'} {(userProfile?.monthlyAllowance || 0).toLocaleString()}
                 </Text>
               </View>
             </View>
@@ -474,49 +477,59 @@ export default function SettingsScreen() {
         visible={showBudgetModal}
         transparent
         animationType="slide"
+        statusBarTranslucent
         onRequestClose={() => setShowBudgetModal(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          className="flex-1 bg-black/50 justify-end"
+          behavior="padding"
+          className="flex-1 bg-black/50"
         >
-          <View className="bg-white rounded-t-[32px] px-6 pt-5 pb-9">
-            <View className="w-12 h-1 bg-gray-300 rounded-full self-center mb-4" />
-            <Text className="text-lg font-bold text-[#0f172a] mb-1">
-              Update Monthly Allowance
-            </Text>
-            <Text className="text-xs text-[#64748b] mb-4">
-              This amount will be used to calculate your safe daily spending limit.
-            </Text>
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }}
+            keyboardShouldPersistTaps="handled"
+            bounces={false}
+          >
+            <View className="bg-white rounded-t-[32px] px-6 pt-5 pb-9">
+              <View className="w-12 h-1 bg-gray-300 rounded-full self-center mb-4" />
+              <Text className="text-lg font-bold text-[#0f172a] mb-1">
+                Update Monthly Allowance
+              </Text>
+              <Text className="text-xs text-[#64748b] mb-4">
+                This amount will be used to calculate your safe daily spending limit.
+              </Text>
 
-            <Text className="text-xs font-semibold text-[#64748b] mb-1">Amount (Rs)</Text>
-            <TextInput
-              value={newAllowance}
-              onChangeText={setNewAllowance}
-              keyboardType="numeric"
-              placeholder="e.g. 25000"
-              placeholderTextColor="#94a3b8"
-              className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-sm text-[#0f172a] mb-5"
-            />
+              <Text className="text-xs font-semibold text-[#64748b] mb-1">
+                Amount ({selectedCurrency?.symbol || 'Rs'})
+              </Text>
+              <TextInput
+                value={newAllowance}
+                onChangeText={setNewAllowance}
+                keyboardType="numeric"
+                autoFocus
+                placeholder="e.g. 25000"
+                placeholderTextColor="#94a3b8"
+                className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-sm text-[#0f172a] mb-5"
+              />
 
-            <View className="flex-row gap-3">
-              <TouchableOpacity
-                onPress={() => setShowBudgetModal(false)}
-                className="flex-1 bg-gray-100 py-3.5 rounded-xl items-center"
-              >
-                <Text className="text-xs font-bold text-[#64748b]">Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleSaveAllowance}
-                disabled={loading}
-                className="flex-1 bg-[#4143d5] py-3.5 rounded-xl items-center shadow-md"
-              >
-                <Text className="text-xs font-bold text-white">
-                  {loading ? 'Saving...' : 'Save'}
-                </Text>
-              </TouchableOpacity>
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  onPress={() => setShowBudgetModal(false)}
+                  className="flex-1 bg-gray-100 py-3.5 rounded-xl items-center"
+                >
+                  <Text className="text-xs font-bold text-[#64748b]">Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSaveAllowance}
+                  disabled={loading}
+                  className="flex-1 bg-[#4143d5] py-3.5 rounded-xl items-center shadow-md"
+                >
+                  <Text className="text-xs font-bold text-white">
+                    {loading ? 'Saving...' : 'Save'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -561,6 +574,7 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
       {/* Currency Picker Modal */}
       <Modal
         visible={showCurrencyModal}
@@ -577,7 +591,7 @@ export default function SettingsScreen() {
             </Text>
 
             {CURRENCY_OPTIONS.map((item) => {
-              const isSelected = selectedCurrency.code === item.code;
+              const isSelected = selectedCurrency?.code === item.code;
               return (
                 <TouchableOpacity
                   key={item.code}

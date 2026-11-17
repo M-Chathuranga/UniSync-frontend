@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/api';
 
 const CUSTOM_BUDGETS_KEY = '@smart_finance_custom_category_budgets';
+const DELETED_CATS_KEY = '@smart_finance_deleted_categories';
 
 // Static category budget limits (per month)
 const INITIAL_CATEGORY_CONFIG = [
@@ -76,14 +77,25 @@ export default function CategoriesScreen() {
   // Fetch all expenses, custom categories, and local budget overrides
   const loadCategoryData = async () => {
     try {
-      const [expensesRes, customCatsRes, localBudgetsRaw] = await Promise.all([
+      const [expensesRes, customCatsRes, localBudgetsRaw, deletedCatsRaw] = await Promise.all([
         api.getExpenses(),
         api.getCategories(),
         AsyncStorage.getItem(CUSTOM_BUDGETS_KEY),
+        AsyncStorage.getItem(DELETED_CATS_KEY),
       ]);
 
+      const deletedList = deletedCatsRaw ? JSON.parse(deletedCatsRaw) : [];
+      const filteredCats = Array.isArray(customCatsRes)
+        ? customCatsRes.filter(
+            (c) =>
+              !deletedList.includes(c._id) &&
+              !deletedList.includes(c.id) &&
+              !deletedList.includes(c.name?.toLowerCase())
+          )
+        : [];
+
       setAllExpenses(Array.isArray(expensesRes) ? expensesRes : []);
-      setCustomCategories(Array.isArray(customCatsRes) ? customCatsRes : []);
+      setCustomCategories(filteredCats);
       setSavedBudgetsMap(localBudgetsRaw ? JSON.parse(localBudgetsRaw) : {});
     } catch (e) {
       console.error('Error loading category data:', e);
@@ -148,7 +160,7 @@ export default function CategoriesScreen() {
         const monthlyLimit = Number(c.budget) || Number(savedBudgetsMap[c.name]) || 0;
         const style = getCustomCategoryStyle(c.name);
         return {
-          id: c._id,
+          id: c._id || c.id,
           name: c.name,
           icon: c.icon && c.icon !== 'pricetag' ? c.icon : style.icon,
           color: style.color,
@@ -199,6 +211,15 @@ export default function CategoriesScreen() {
         budget: validBudget,
       });
 
+      // Remove from deleted blocklist if user re-creates a previously deleted category name
+      const deletedRaw = await AsyncStorage.getItem(DELETED_CATS_KEY);
+      if (deletedRaw) {
+        const cleaned = JSON.parse(deletedRaw).filter(
+          (item) => item !== trimmedName.toLowerCase()
+        );
+        await AsyncStorage.setItem(DELETED_CATS_KEY, JSON.stringify(cleaned));
+      }
+
       if (validBudget > 0) {
         const updatedMap = { ...savedBudgetsMap, [trimmedName]: validBudget };
         setSavedBudgetsMap(updatedMap);
@@ -236,7 +257,6 @@ export default function CategoriesScreen() {
     const style = getCustomCategoryStyle(trimmedName);
 
     try {
-      // Update on backend if PUT /categories/:id exists
       if (api.updateCategory) {
         await api.updateCategory(selectedCat.id, {
           name: trimmedName,
@@ -249,7 +269,6 @@ export default function CategoriesScreen() {
     }
 
     try {
-      // Update local budget map (and rename key if category name changed)
       const updatedMap = { ...savedBudgetsMap };
       if (selectedCat.name !== trimmedName) {
         delete updatedMap[selectedCat.name];
@@ -258,10 +277,9 @@ export default function CategoriesScreen() {
       setSavedBudgetsMap(updatedMap);
       await AsyncStorage.setItem(CUSTOM_BUDGETS_KEY, JSON.stringify(updatedMap));
 
-      // Update local customCategories list immediately
       setCustomCategories((prev) =>
         prev.map((c) =>
-          c._id === selectedCat.id
+          (c._id || c.id) === selectedCat.id
             ? { ...c, name: trimmedName, icon: style.icon, budget: validBudget }
             : c
         )
@@ -275,7 +293,7 @@ export default function CategoriesScreen() {
     }
   };
 
-  // Delete an existing custom category
+  // Delete an existing custom category permanently
   const handleDeleteCategory = () => {
     if (!selectedCat) return;
 
@@ -288,21 +306,41 @@ export default function CategoriesScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            const targetId = selectedCat.id || selectedCat._id;
             try {
-              if (api.deleteCategory) {
-                await api.deleteCategory(selectedCat.id);
+              if (typeof api.deleteCategory === 'function' && targetId) {
+                await api.deleteCategory(targetId);
               }
             } catch (e) {
-              console.warn('Backend deleteCategory fallback to local state:', e.message);
+              console.warn('Backend deleteCategory fallback:', e?.message);
             }
 
             try {
+              const deletedRaw = await AsyncStorage.getItem(DELETED_CATS_KEY);
+              const deletedList = deletedRaw ? JSON.parse(deletedRaw) : [];
+              const nextDeleted = Array.from(
+                new Set(
+                  [
+                    ...deletedList,
+                    ...(targetId ? [targetId] : []),
+                    selectedCat.name?.toLowerCase(),
+                  ].filter(Boolean)
+                )
+              );
+              await AsyncStorage.setItem(DELETED_CATS_KEY, JSON.stringify(nextDeleted));
+
               const updatedMap = { ...savedBudgetsMap };
               delete updatedMap[selectedCat.name];
               setSavedBudgetsMap(updatedMap);
               await AsyncStorage.setItem(CUSTOM_BUDGETS_KEY, JSON.stringify(updatedMap));
 
-              setCustomCategories((prev) => prev.filter((c) => c._id !== selectedCat.id));
+              setCustomCategories((prev) =>
+                prev.filter(
+                  (c) =>
+                    (c._id || c.id) !== targetId &&
+                    c.name?.toLowerCase() !== selectedCat.name?.toLowerCase()
+                )
+              );
               setEditCatModal(false);
               setSelectedCat(null);
             } catch (e) {
