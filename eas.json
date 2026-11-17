@@ -4,11 +4,20 @@
   },
   "build": {
     "preview": {
-      "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://unisync-backend-ivkh.onrender.com"
       }
     },
-    "production": {}
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://unisync-backend-ivkh.onrender.com"
+      }
+    }
   }
 }
