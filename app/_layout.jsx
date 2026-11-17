@@ -1,6 +1,12 @@
 import '../global.css';
 import { Text, TextInput } from 'react-native';
 import { Stack } from 'expo-router';
+import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
+
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false, // Disable strict mode render read/write warnings
+});
 
 // System font scaling සීමා කිරීම
 if (Text.defaultProps == null) Text.defaultProps = {};

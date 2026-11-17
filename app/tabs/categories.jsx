@@ -11,7 +11,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/api';
+
+const CUSTOM_BUDGETS_KEY = '@smart_finance_custom_category_budgets';
 
 // Static category budget limits (per month)
 const INITIAL_CATEGORY_CONFIG = [
@@ -20,8 +23,25 @@ const INITIAL_CATEGORY_CONFIG = [
   { name: 'Transport', icon: 'bus',        color: '#ef4444', budget: 5000  },
   { name: 'Study',     icon: 'book',       color: '#a855f7', budget: 4000  },
   { name: 'Other',     icon: 'receipt',    color: '#64748b', budget: 3000  },
-  // { name: 'Medical',   icon: 'medkit',   color: '#ec4899', budget: 2500  },
 ];
+
+// Pick matching icon & color for custom categories (e.g. Medical -> medkit)
+const getCustomCategoryStyle = (name = '') => {
+  const lower = name.trim().toLowerCase();
+  if (lower.includes('medical') || lower.includes('health') || lower.includes('doctor') || lower.includes('pharmacy')) {
+    return { icon: 'medkit', color: '#ec4899' };
+  }
+  if (lower.includes('gym') || lower.includes('fitness') || lower.includes('sport')) {
+    return { icon: 'barbell', color: '#f97316' };
+  }
+  if (lower.includes('entertainment') || lower.includes('movie') || lower.includes('game')) {
+    return { icon: 'game-controller', color: '#8b5cf6' };
+  }
+  if (lower.includes('shop') || lower.includes('cloth')) {
+    return { icon: 'bag-handle', color: '#0ea5e9' };
+  }
+  return { icon: 'pricetag', color: '#4143d5' };
+};
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -32,31 +52,39 @@ export default function CategoriesScreen() {
 
   const [allExpenses, setAllExpenses] = useState([]);
   const [customCategories, setCustomCategories] = useState([]);
+  const [savedBudgetsMap, setSavedBudgetsMap] = useState({});
   const [modalVisible, setModalVisible] = useState(false);
   const [newName, setNewName] = useState('');
   const [newBudget, setNewBudget] = useState('');
+
+  // Edit / Delete modal state for custom categories
+  const [editCatModal, setEditCatModal] = useState(false);
+  const [selectedCat, setSelectedCat] = useState(null);
+  const [editNameInput, setEditNameInput] = useState('');
+  const [editBudgetInput, setEditBudgetInput] = useState('');
 
   // Period filter state: 'current' | 'year' | 'YYYY-MM'
   const [periodMode, setPeriodMode] = useState('current');
   const [showMonthPicker, setShowMonthPicker] = useState(false);
 
-  // Refresh category and expense data every time this tab receives focus
   useFocusEffect(
     useCallback(() => {
       loadCategoryData();
     }, [])
   );
 
-  // Fetch all expenses and custom categories from backend
+  // Fetch all expenses, custom categories, and local budget overrides
   const loadCategoryData = async () => {
     try {
-      const [expensesRes, customCatsRes] = await Promise.all([
+      const [expensesRes, customCatsRes, localBudgetsRaw] = await Promise.all([
         api.getExpenses(),
         api.getCategories(),
+        AsyncStorage.getItem(CUSTOM_BUDGETS_KEY),
       ]);
 
       setAllExpenses(Array.isArray(expensesRes) ? expensesRes : []);
       setCustomCategories(Array.isArray(customCatsRes) ? customCatsRes : []);
+      setSavedBudgetsMap(localBudgetsRaw ? JSON.parse(localBudgetsRaw) : {});
     } catch (e) {
       console.error('Error loading category data:', e);
     }
@@ -109,20 +137,27 @@ export default function CategoriesScreen() {
       name: cat.name,
       icon: cat.icon,
       color: cat.color,
+      isCustom: false,
       budget: cat.budget * multiplier,
       spent: spendMap[cat.name] || 0,
     }));
 
     const customMapped = customCategories
       .filter((c) => !INITIAL_CATEGORY_CONFIG.some((init) => init.name === c.name))
-      .map((c) => ({
-        id: c._id,
-        name: c.name,
-        icon: c.icon || 'pricetag',
-        color: '#4143d5',
-        budget: 0,
-        spent: spendMap[c.name] || 0,
-      }));
+      .map((c) => {
+        const monthlyLimit = Number(c.budget) || Number(savedBudgetsMap[c.name]) || 0;
+        const style = getCustomCategoryStyle(c.name);
+        return {
+          id: c._id,
+          name: c.name,
+          icon: c.icon && c.icon !== 'pricetag' ? c.icon : style.icon,
+          color: style.color,
+          isCustom: true,
+          rawMonthlyBudget: monthlyLimit,
+          budget: monthlyLimit * multiplier,
+          spent: spendMap[c.name] || 0,
+        };
+      });
 
     let title = `${MONTH_NAMES[now.getMonth()]} ${currentYear}`;
     if (periodMode === 'year') {
@@ -137,7 +172,7 @@ export default function CategoriesScreen() {
       periodTitle: title,
       budgetMultiplier: multiplier,
     };
-  }, [allExpenses, customCategories, periodMode, availableMonths, currentMonthKey, currentYear]);
+  }, [allExpenses, customCategories, savedBudgetsMap, periodMode, availableMonths, currentMonthKey, currentYear]);
 
   // Compute totals for the summary card
   const totalSpent = categories.reduce((sum, item) => sum + item.spent, 0);
@@ -145,15 +180,31 @@ export default function CategoriesScreen() {
   const overallPercentage =
     totalBudget > 0 ? Math.min(Math.round((totalSpent / totalBudget) * 100), 100) : 0;
 
-  // Add a new custom category to the backend and reload
+  // Add a new custom category with its monthly budget and matching icon
   const handleAddCategory = async () => {
-    if (!newName.trim()) {
+    const trimmedName = newName.trim();
+    if (!trimmedName) {
       Alert.alert('Required', 'Please enter a category name.');
       return;
     }
 
+    const parsedBudget = parseFloat(newBudget);
+    const validBudget = !isNaN(parsedBudget) && parsedBudget > 0 ? parsedBudget : 0;
+    const style = getCustomCategoryStyle(trimmedName);
+
     try {
-      await api.addCategory({ name: newName.trim(), icon: 'pricetag' });
+      await api.addCategory({
+        name: trimmedName,
+        icon: style.icon,
+        budget: validBudget,
+      });
+
+      if (validBudget > 0) {
+        const updatedMap = { ...savedBudgetsMap, [trimmedName]: validBudget };
+        setSavedBudgetsMap(updatedMap);
+        await AsyncStorage.setItem(CUSTOM_BUDGETS_KEY, JSON.stringify(updatedMap));
+      }
+
       setNewName('');
       setNewBudget('');
       setModalVisible(false);
@@ -161,6 +212,106 @@ export default function CategoriesScreen() {
     } catch (e) {
       Alert.alert('Error', e.message || 'Failed to add category');
     }
+  };
+
+  // Open Edit/Delete modal for a custom category
+  const openEditModal = (cat) => {
+    setSelectedCat(cat);
+    setEditNameInput(cat.name);
+    setEditBudgetInput(cat.rawMonthlyBudget > 0 ? String(cat.rawMonthlyBudget) : '');
+    setEditCatModal(true);
+  };
+
+  // Save updated name and monthly budget for an existing custom category
+  const handleUpdateCategory = async () => {
+    if (!selectedCat) return;
+    const trimmedName = editNameInput.trim();
+    if (!trimmedName) {
+      Alert.alert('Required', 'Please enter a category name.');
+      return;
+    }
+
+    const parsed = parseFloat(editBudgetInput);
+    const validBudget = !isNaN(parsed) && parsed >= 0 ? parsed : 0;
+    const style = getCustomCategoryStyle(trimmedName);
+
+    try {
+      // Update on backend if PUT /categories/:id exists
+      if (api.updateCategory) {
+        await api.updateCategory(selectedCat.id, {
+          name: trimmedName,
+          icon: style.icon,
+          budget: validBudget,
+        });
+      }
+    } catch (e) {
+      console.warn('Backend updateCategory fallback to local state:', e.message);
+    }
+
+    try {
+      // Update local budget map (and rename key if category name changed)
+      const updatedMap = { ...savedBudgetsMap };
+      if (selectedCat.name !== trimmedName) {
+        delete updatedMap[selectedCat.name];
+      }
+      updatedMap[trimmedName] = validBudget;
+      setSavedBudgetsMap(updatedMap);
+      await AsyncStorage.setItem(CUSTOM_BUDGETS_KEY, JSON.stringify(updatedMap));
+
+      // Update local customCategories list immediately
+      setCustomCategories((prev) =>
+        prev.map((c) =>
+          c._id === selectedCat.id
+            ? { ...c, name: trimmedName, icon: style.icon, budget: validBudget }
+            : c
+        )
+      );
+
+      setEditCatModal(false);
+      setSelectedCat(null);
+      loadCategoryData();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to update category.');
+    }
+  };
+
+  // Delete an existing custom category
+  const handleDeleteCategory = () => {
+    if (!selectedCat) return;
+
+    Alert.alert(
+      'Delete Category',
+      `Are you sure you want to delete "${selectedCat.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (api.deleteCategory) {
+                await api.deleteCategory(selectedCat.id);
+              }
+            } catch (e) {
+              console.warn('Backend deleteCategory fallback to local state:', e.message);
+            }
+
+            try {
+              const updatedMap = { ...savedBudgetsMap };
+              delete updatedMap[selectedCat.name];
+              setSavedBudgetsMap(updatedMap);
+              await AsyncStorage.setItem(CUSTOM_BUDGETS_KEY, JSON.stringify(updatedMap));
+
+              setCustomCategories((prev) => prev.filter((c) => c._id !== selectedCat.id));
+              setEditCatModal(false);
+              setSelectedCat(null);
+            } catch (e) {
+              Alert.alert('Error', 'Failed to delete category.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -180,7 +331,7 @@ export default function CategoriesScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Period Switcher Bar (Default: This Month; Optional: Full Year or Past Months) */}
+        {/* Period Switcher Bar */}
         <View className="flex-row items-center gap-2 mb-3">
           <TouchableOpacity
             onPress={() => {
@@ -317,8 +468,14 @@ export default function CategoriesScreen() {
           const isOver = cat.budget > 0 && cat.spent > cat.budget;
 
           return (
-            <View
+            <TouchableOpacity
               key={cat.id}
+              activeOpacity={cat.isCustom ? 0.7 : 1}
+              onPress={() => {
+                if (cat.isCustom) {
+                  openEditModal(cat);
+                }
+              }}
               className="bg-white rounded-2xl p-4 shadow-sm border border-[#f1f5f9] mb-3"
             >
               <View className="flex-row justify-between items-center mb-2.5">
@@ -329,10 +486,22 @@ export default function CategoriesScreen() {
                   >
                     <Ionicons name={cat.icon} size={20} color={cat.color} />
                   </View>
-                  <View>
-                    <Text className="text-xs font-bold text-[#0f172a]">{cat.name}</Text>
+                  <View className="flex-1">
+                    <View className="flex-row items-center">
+                      <Text className="text-xs font-bold text-[#0f172a]">{cat.name}</Text>
+                      {cat.isCustom && (
+                        <Ionicons
+                          name="create-outline"
+                          size={13}
+                          color="#94a3b8"
+                          style={{ marginLeft: 5 }}
+                        />
+                      )}
+                    </View>
                     <Text className="text-[11px] text-[#64748b] mt-0.5">
-                      {cat.budget > 0 ? `Limit: Rs ${cat.budget.toLocaleString()}` : 'No budget set'}
+                      {cat.budget > 0
+                        ? `Limit: Rs ${cat.budget.toLocaleString()}`
+                        : 'No budget set (Tap to edit)'}
                     </Text>
                   </View>
                 </View>
@@ -356,7 +525,7 @@ export default function CategoriesScreen() {
                   />
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
           );
         })}
       </ScrollView>
@@ -383,7 +552,7 @@ export default function CategoriesScreen() {
             />
 
             <Text className="text-xs font-semibold text-[#64748b] mb-1">
-              Monthly Budget (Rs) — Optional
+              Monthly Budget (Rs)
             </Text>
             <TextInput
               value={newBudget}
@@ -406,6 +575,64 @@ export default function CategoriesScreen() {
                 className="flex-1 bg-[#4143d5] py-3.5 rounded-xl items-center"
               >
                 <Text className="text-xs font-bold text-white">Add</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit / Delete Custom Category Modal */}
+      <Modal
+        visible={editCatModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditCatModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-[32px] p-6">
+            <View className="w-12 h-1 bg-gray-200 rounded-full self-center mb-4" />
+            <View className="flex-row items-center justify-between mb-4">
+              <Text className="text-lg font-bold text-[#0f172a]">Edit Category</Text>
+              <TouchableOpacity
+                onPress={handleDeleteCategory}
+                className="flex-row items-center bg-[#fee2e2] px-3 py-1.5 rounded-xl"
+              >
+                <Ionicons name="trash-outline" size={14} color="#dc2626" style={{ marginRight: 4 }} />
+                <Text className="text-xs font-bold text-[#dc2626]">Delete</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text className="text-xs font-semibold text-[#64748b] mb-1">Category Name</Text>
+            <TextInput
+              value={editNameInput}
+              onChangeText={setEditNameInput}
+              placeholder="e.g. Medical"
+              placeholderTextColor="#94a3b8"
+              className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-4"
+            />
+
+            <Text className="text-xs font-semibold text-[#64748b] mb-1">Monthly Budget (Rs)</Text>
+            <TextInput
+              value={editBudgetInput}
+              onChangeText={setEditBudgetInput}
+              keyboardType="numeric"
+              placeholder="e.g. 3000"
+              placeholderTextColor="#94a3b8"
+              className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-6"
+            />
+
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={() => setEditCatModal(false)}
+                className="flex-1 bg-gray-100 py-3.5 rounded-xl items-center"
+              >
+                <Text className="text-xs font-bold text-[#64748b]">Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleUpdateCategory}
+                className="flex-1 bg-[#4143d5] py-3.5 rounded-xl items-center"
+              >
+                <Text className="text-xs font-bold text-white">Save Changes</Text>
               </TouchableOpacity>
             </View>
           </View>

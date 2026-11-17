@@ -44,6 +44,17 @@ export const api = {
     return data;
   },
 
+  deleteAccount: async () => {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${BASE_URL}/auth/delete-account`, {
+      method: 'DELETE',
+      headers,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete account');
+    return data;
+  },
+
   // DASHBOARD
   getDashboard: async () => {
     const headers = await getAuthHeaders();
@@ -137,7 +148,7 @@ export const api = {
     return data;
   },
 
-  // CATEGORIES
+// CATEGORIES
   getCategories: async () => {
     const headers = await getAuthHeaders();
     const response = await fetch(`${BASE_URL}/categories`, {
@@ -158,6 +169,29 @@ export const api = {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || 'Failed to add category');
+    return data;
+  },
+
+  updateCategory: async (categoryId, categoryData) => {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${BASE_URL}/categories/${categoryId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(categoryData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to update category');
+    return data;
+  },
+
+  deleteCategory: async (categoryId) => {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${BASE_URL}/categories/${categoryId}`, {
+      method: 'DELETE',
+      headers,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete category');
     return data;
   },
 
