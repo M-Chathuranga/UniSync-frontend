@@ -1,26 +1,57 @@
 {
   "expo": {
-    "name": "UniSync-frontend",
-    "slug": "UniSync-frontend",
+    "name": "Smart Finance",
+    "slug": "smart-finance",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "myapp",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "icon": "./assets/images/icon.png",
+    "scheme": "smartfinance",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "newArchEnabled": false,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kavishka.smartfinance"
     },
     "android": {
+      "package": "com.kavishka.smartfinance",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#ffffff"
-      }
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "##1e293b"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "bundler": "metro"
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
-    ]
+      "expo-audio",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Smart Finance to use Face ID to unlock your account."
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7b449aa2-5041-4cf4-b44b-a68951c32cb9"
+      }
+    },
+    "owner": "kavishka_disanayaka"
   }
 }
