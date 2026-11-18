@@ -220,7 +220,7 @@ export default function DashboardScreen() {
 
   const safeToSpend = financeData.safeDailyLimit || 0;
 
-  // Add new transaction
+  // Add new transaction (Expense or Income)
   const handleAddNewTransaction = async (newTx) => {
     try {
       if (newTx.type === 'expense') {
@@ -229,8 +229,12 @@ export default function DashboardScreen() {
           amount: newTx.amount,
           category: newTx.category,
         });
+      } else if (newTx.type === 'income') {
+        const currentIncome = Number(financeData.income) || 0;
+        const updatedIncome = currentIncome + Number(newTx.amount);
+        await api.updateSettings({ monthlyAllowance: updatedIncome });
       }
-      loadFinanceData();
+      await loadFinanceData();
     } catch (e) {
       console.error('Error adding transaction', e);
       Alert.alert('Error', 'Failed to save transaction to server');
@@ -541,114 +545,121 @@ function ManualAddModal({ visible, onClose, onAddTransaction }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1 bg-black/50 justify-end"
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        style={{ flex: 1 }}
       >
-        <View className="bg-white rounded-t-[32px] px-6 pt-5 pb-9">
-          <View className="w-12 h-1 bg-gray-300 rounded-full self-center mb-4" />
-
-          <Text className="text-lg font-bold text-[#0f172a] mb-3">Add Transaction</Text>
-
-          <View className="flex-row bg-[#f1f5f9] p-1 rounded-2xl mb-4">
-            <TouchableOpacity
-              onPress={() => setType('expense')}
-              className={`flex-1 py-2.5 rounded-xl items-center ${
-                type === 'expense' ? 'bg-[#ef4444]' : 'bg-transparent'
-              }`}
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-[32px] max-h-[88%]">
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 }}
             >
-              <Text className={`text-xs font-bold ${type === 'expense' ? 'text-white' : 'text-[#64748b]'}`}>
-                Expense
-              </Text>
-            </TouchableOpacity>
+              <View className="w-12 h-1 bg-gray-300 rounded-full self-center mb-4" />
 
-            <TouchableOpacity
-              onPress={() => setType('income')}
-              className={`flex-1 py-2.5 rounded-xl items-center ${
-                type === 'income' ? 'bg-[#16a34a]' : 'bg-transparent'
-              }`}
-            >
-              <Text className={`text-xs font-bold ${type === 'income' ? 'text-white' : 'text-[#64748b]'}`}>
-                Income
-              </Text>
-            </TouchableOpacity>
-          </View>
+              <Text className="text-lg font-bold text-[#0f172a] mb-3">Add Transaction</Text>
 
-          <Text className="text-xs font-semibold text-[#64748b] mb-1">Title / Description</Text>
-          <TextInput
-            value={title}
-            onChangeText={setTitle}
-            placeholder={type === 'expense' ? 'e.g. Canteen lunch' : 'e.g. Monthly Allowance'}
-            placeholderTextColor="#94a3b8"
-            className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-3"
-          />
+              <View className="flex-row bg-[#f1f5f9] p-1 rounded-2xl mb-4">
+                <TouchableOpacity
+                  onPress={() => setType('expense')}
+                  className={`flex-1 py-2.5 rounded-xl items-center ${
+                    type === 'expense' ? 'bg-[#ef4444]' : 'bg-transparent'
+                  }`}
+                >
+                  <Text className={`text-xs font-bold ${type === 'expense' ? 'text-white' : 'text-[#64748b]'}`}>
+                    Expense
+                  </Text>
+                </TouchableOpacity>
 
-          <Text className="text-xs font-semibold text-[#64748b] mb-1">Amount (Rs)</Text>
-          <TextInput
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            placeholder="0.00"
-            placeholderTextColor="#94a3b8"
-            className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-4"
-          />
-
-          {type === 'expense' && (
-            <>
-              <Text className="text-xs font-semibold text-[#64748b] mb-2">Category</Text>
-              <View className="flex-row flex-wrap gap-2 mb-5">
-                {ALL_CATEGORIES.map((c) => {
-                  const isSelected = selectedCategory === c.name;
-                  return (
-                    <TouchableOpacity
-                      key={c.name}
-                      onPress={() => setSelectedCategory(c.name)}
-                      className={`flex-row items-center px-3 py-1.5 rounded-full border ${
-                        isSelected
-                          ? 'bg-[#4143d5] border-[#4143d5]'
-                          : 'bg-[#f8fafc] border-gray-200'
-                      }`}
-                    >
-                      <Ionicons
-                        name={c.icon}
-                        size={14}
-                        color={isSelected ? '#ffffff' : '#64748b'}
-                        style={{ marginRight: 4 }}
-                      />
-                      <Text
-                        className={`text-xs font-semibold ${
-                          isSelected ? 'text-white' : 'text-[#64748b]'
-                        }`}
-                      >
-                        {c.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                <TouchableOpacity
+                  onPress={() => setType('income')}
+                  className={`flex-1 py-2.5 rounded-xl items-center ${
+                    type === 'income' ? 'bg-[#16a34a]' : 'bg-transparent'
+                  }`}
+                >
+                  <Text className={`text-xs font-bold ${type === 'income' ? 'text-white' : 'text-[#64748b]'}`}>
+                    Income
+                  </Text>
+                </TouchableOpacity>
               </View>
-            </>
-          )}
 
-          <View className="flex-row gap-3 mt-2">
-            <TouchableOpacity
-              onPress={onClose}
-              className="flex-1 bg-gray-100 py-3.5 rounded-xl items-center"
-            >
-              <Text className="text-xs font-bold text-[#64748b]">Cancel</Text>
-            </TouchableOpacity>
+              <Text className="text-xs font-semibold text-[#64748b] mb-1">Title / Description</Text>
+              <TextInput
+                value={title}
+                onChangeText={setTitle}
+                placeholder={type === 'expense' ? 'e.g. Canteen lunch' : 'e.g. Monthly Allowance'}
+                placeholderTextColor="#94a3b8"
+                className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-3"
+              />
 
-            <TouchableOpacity
-              onPress={handleSave}
-              className="flex-1 bg-[#4143d5] py-3.5 rounded-xl items-center shadow-md shadow-[#4143d5]/30"
-            >
-              <Text className="text-xs font-bold text-white">Save</Text>
-            </TouchableOpacity>
+              <Text className="text-xs font-semibold text-[#64748b] mb-1">Amount (Rs)</Text>
+              <TextInput
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="numeric"
+                placeholder="0.00"
+                placeholderTextColor="#94a3b8"
+                className="bg-[#f8fafc] border border-gray-200 rounded-xl px-4 py-3 text-xs text-[#0f172a] mb-4"
+              />
+
+              {type === 'expense' && (
+                <>
+                  <Text className="text-xs font-semibold text-[#64748b] mb-2">Category</Text>
+                  <View className="flex-row flex-wrap gap-2 mb-5">
+                    {ALL_CATEGORIES.map((c) => {
+                      const isSelected = selectedCategory === c.name;
+                      return (
+                        <TouchableOpacity
+                          key={c.name}
+                          onPress={() => setSelectedCategory(c.name)}
+                          className={`flex-row items-center px-3 py-1.5 rounded-full border ${
+                            isSelected
+                              ? 'bg-[#4143d5] border-[#4143d5]'
+                              : 'bg-[#f8fafc] border-gray-200'
+                          }`}
+                        >
+                          <Ionicons
+                            name={c.icon}
+                            size={14}
+                            color={isSelected ? '#ffffff' : '#64748b'}
+                            style={{ marginRight: 4 }}
+                          />
+                          <Text
+                            className={`text-xs font-semibold ${
+                              isSelected ? 'text-white' : 'text-[#64748b]'
+                            }`}
+                          >
+                            {c.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+
+              <View className="flex-row gap-3 mt-2">
+                <TouchableOpacity
+                  onPress={onClose}
+                  className="flex-1 bg-gray-100 py-3.5 rounded-xl items-center"
+                >
+                  <Text className="text-xs font-bold text-[#64748b]">Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleSave}
+                  className="flex-1 bg-[#4143d5] py-3.5 rounded-xl items-center shadow-md shadow-[#4143d5]/30"
+                >
+                  <Text className="text-xs font-bold text-white">Save</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>
   );
 }
-
 // Edit Expense Modal Component
 function EditExpenseModal({ visible, transaction, onClose, onSave }) {
   const [title, setTitle] = useState('');
